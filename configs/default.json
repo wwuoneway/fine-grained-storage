@@ -1,0 +1,8 @@
+{
+  "num_events": 100000,
+  "particles": { "min": 2, "max": 10 },
+  "seed": 42,
+  "output_dir": "output",
+  "position": { "min": -100.0, "max": 100.0 },
+  "momentum": { "mean": 0.0, "stddev": 1.0, "min_magnitude": 0.05 }
+}

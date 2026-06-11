@@ -18,6 +18,13 @@ __pycache__/
 .venv/
 
 # =========================
+# Editor / machine-specific
+# =========================
+# IntelliSense config with absolute compiler paths — local to each machine.
+# .vscode/settings.json IS shared and tracked; c_cpp_properties.json is not.
+.vscode/c_cpp_properties.json
+
+# =========================
 # OS files
 # =========================
 .DS_Store

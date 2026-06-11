@@ -1,4 +1,6 @@
 {
+  "files.autoSave": "afterDelay",
+  "files.autoSaveDelay": 1000,
   "editor.formatOnSave": true,
   "C_Cpp.clang_format_style": "file",
   "editor.defaultFormatter": "ms-vscode.cpptools",

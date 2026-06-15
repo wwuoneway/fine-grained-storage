@@ -21,8 +21,12 @@ namespace fgs {
   Event generate_event(Config const& cfg, std::uint64_t event_id, std::mt19937_64& rng)
   {
     std::uniform_int_distribution<std::uint32_t> n_dist(cfg.particles.min, cfg.particles.max);
-    std::uniform_real_distribution<float> pos_dist(static_cast<float>(cfg.position.min),
-                                                   static_cast<float>(cfg.position.max));
+    std::uniform_real_distribution<float> x_dist(static_cast<float>(cfg.position.x.min),
+                                                  static_cast<float>(cfg.position.x.max));
+    std::uniform_real_distribution<float> y_dist(static_cast<float>(cfg.position.y.min),
+                                                  static_cast<float>(cfg.position.y.max));
+    std::uniform_real_distribution<float> z_dist(static_cast<float>(cfg.position.z.min),
+                                                  static_cast<float>(cfg.position.z.max));
     std::normal_distribution<float> mom_dist(static_cast<float>(cfg.momentum.mean),
                                              static_cast<float>(cfg.momentum.stddev));
 
@@ -36,7 +40,7 @@ namespace fgs {
     event.momenta.resize(n);
 
     for (std::uint32_t i = 0; i < n; ++i) {
-      event.positions[i] = Position{pos_dist(rng), pos_dist(rng), pos_dist(rng)};
+      event.positions[i] = Position{x_dist(rng), y_dist(rng), z_dist(rng)};
     }
 
     for (std::uint32_t i = 0; i < n; ++i) {
@@ -71,7 +75,11 @@ namespace fgs {
         {"particles", {{"min", cfg.particles.min}, {"max", cfg.particles.max}}},
         {"seed", cfg.seed},
         {"output_dir", cfg.output_dir},
-        {"position", {{"min", cfg.position.min}, {"max", cfg.position.max}}},
+        {"position",
+         {{"distribution", cfg.position.distribution},
+          {"x", {{"min", cfg.position.x.min}, {"max", cfg.position.x.max}}},
+          {"y", {{"min", cfg.position.y.min}, {"max", cfg.position.y.max}}},
+          {"z", {{"min", cfg.position.z.min}, {"max", cfg.position.z.max}}}}},
         {"momentum",
          {{"mean", cfg.momentum.mean},
           {"stddev", cfg.momentum.stddev},

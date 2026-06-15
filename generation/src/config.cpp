@@ -40,8 +40,11 @@ namespace fgs {
       c.particles.min = j.at("particles").at("min").get<std::uint32_t>();
       c.particles.max = j.at("particles").at("max").get<std::uint32_t>();
 
-      c.position.min = j.at("position").at("min").get<double>();
-      c.position.max = j.at("position").at("max").get<double>();
+      auto const& pos = j.at("position");
+      c.position.distribution = pos.at("distribution").get<std::string>();
+      c.position.x = {pos.at("x").at("min").get<double>(), pos.at("x").at("max").get<double>()};
+      c.position.y = {pos.at("y").at("min").get<double>(), pos.at("y").at("max").get<double>()};
+      c.position.z = {pos.at("z").at("min").get<double>(), pos.at("z").at("max").get<double>()};
 
       c.momentum.mean = j.at("momentum").at("mean").get<double>();
       c.momentum.stddev = j.at("momentum").at("stddev").get<double>();
@@ -55,8 +58,14 @@ namespace fgs {
       fail("num_events must be > 0");
     if (c.particles.min > c.particles.max)
       fail("particles.min must be <= particles.max");
-    if (c.position.min > c.position.max)
-      fail("position.min must be <= position.max");
+    if (c.position.distribution != "uniform")
+      fail("position.distribution must be \"uniform\"");
+    if (c.position.x.min > c.position.x.max)
+      fail("position.x.min must be <= position.x.max");
+    if (c.position.y.min > c.position.y.max)
+      fail("position.y.min must be <= position.y.max");
+    if (c.position.z.min > c.position.z.max)
+      fail("position.z.min must be <= position.z.max");
     if (!(c.momentum.stddev > 0.0))
       fail("momentum.stddev must be > 0");
     if (c.momentum.min_magnitude < 0.0)

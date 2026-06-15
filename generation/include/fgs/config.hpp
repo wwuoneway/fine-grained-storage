@@ -6,9 +6,16 @@
 
 namespace fgs {
 
-  struct PositionConfig {
+  struct AxisRange {
     double min = -100.0;
     double max = 100.0;
+  };
+
+  struct PositionConfig {
+    std::string distribution = "uniform";
+    AxisRange x{};
+    AxisRange y{};
+    AxisRange z{};
   };
 
   struct MomentumConfig {

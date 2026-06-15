@@ -32,7 +32,7 @@ namespace fgs {
     std::uint64_t num_events = 1000;
     ParticleConfig particles{};
     std::uint64_t seed = 42;
-    std::string output_dir = "output";
+    std::filesystem::path output_dir = "output";
     PositionConfig position{};
     MomentumConfig momentum{};
   };

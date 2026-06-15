@@ -74,7 +74,7 @@ namespace fgs {
         {"num_events", cfg.num_events},
         {"particles", {{"min", cfg.particles.min}, {"max", cfg.particles.max}}},
         {"seed", cfg.seed},
-        {"output_dir", cfg.output_dir},
+        {"output_dir", cfg.output_dir.string()},
         {"position",
          {{"distribution", cfg.position.distribution},
           {"x", {{"min", cfg.position.x.min}, {"max", cfg.position.x.max}}},

@@ -20,9 +20,7 @@ __pycache__/
 # =========================
 # Editor / machine-specific
 # =========================
-# IntelliSense config with absolute compiler paths — local to each machine.
-# .vscode/settings.json IS shared and tracked; c_cpp_properties.json is not.
-.vscode/c_cpp_properties.json
+.vscode/
 
 # =========================
 # OS files

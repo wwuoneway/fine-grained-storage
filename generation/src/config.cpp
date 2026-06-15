@@ -66,7 +66,7 @@ namespace fgs {
       fail("position.y.min must be <= position.y.max");
     if (c.position.z.min > c.position.z.max)
       fail("position.z.min must be <= position.z.max");
-    if (!(c.momentum.stddev > 0.0))
+    if (c.momentum.stddev <= 0.0)
       fail("momentum.stddev must be > 0");
     if (c.momentum.min_magnitude < 0.0)
       fail("momentum.min_magnitude must be >= 0");

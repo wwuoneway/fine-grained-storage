@@ -1,0 +1,13 @@
+{
+  "num_events": 10000000,
+  "particles": { "min": 2, "max": 12 },
+  "seed": 42,
+  "output_dir": "output",
+  "position": {
+    "distribution": "uniform",
+    "x": { "min": -150.0, "max": 150.0 },
+    "y": { "min": -75.0,  "max": 75.0  },
+    "z": { "min": -500.0, "max": 500.0 }
+  },
+  "momentum": { "mean": 0.0, "stddev": 1.0, "min_magnitude": 0.05 }
+}

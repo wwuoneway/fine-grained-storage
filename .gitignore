@@ -18,6 +18,11 @@ __pycache__/
 .venv/
 
 # =========================
+# Editor / machine-specific
+# =========================
+.vscode/
+
+# =========================
 # OS files
 # =========================
 .DS_Store
@@ -29,3 +34,17 @@ Thumbs.db
 *.tmp
 *.temp
 *.swp
+
+# Documentation for internal development, not needed in the repository
+docs.me/
+
+# =========================
+# Generated benchmark data
+# =========================
+# Phase 1 writes all synthetic input data under output/ (configurable via the
+# "output_dir" config key). It is generated at runtime and must never be
+# committed.
+output/
+
+# CMake build trees (also covered by build/ above, listed here for clarity).
+build/

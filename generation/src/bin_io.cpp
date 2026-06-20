@@ -252,4 +252,20 @@ namespace fgs {
     return events;
   }
 
+  std::vector<std::vector<float>> load_product(std::filesystem::path const& gen_dir,
+                                               std::string const& file_name)
+  {
+    ProductReader reader(gen_dir / file_name);
+
+    std::vector<std::vector<float>> events;
+    events.reserve(reader.num_events());
+
+    std::vector<float> floats;
+    std::uint32_t n = 0;
+    while (reader.read_next(n, floats))
+      events.push_back(floats); // copy: each event keeps its own buffer
+
+    return events;
+  }
+
 }

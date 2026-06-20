@@ -1,0 +1,6 @@
+{
+  "gen_dir": "output/generation",
+  "output_root": "output/writing/rntuple/strategy_one",
+  "variants": ["no-shuffle", "shuffle"],
+  "shuffle_seed": 7
+}

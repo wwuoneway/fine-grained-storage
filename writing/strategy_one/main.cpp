@@ -58,15 +58,24 @@ namespace {
     return cfg;
   }
 
-  // One manifest per strategy (not per variant): the product registry is shared,
-  // so it is written once. Each variant is listed by name (= its subfolder);
-  // `shuffle_seed` is attached only to the shuffled variant. Every variant's data
-  // lives at <manifest dir>/<variant>/<root_file_name>.
+  struct VariantResult {
+    std::string name;
+    std::string file_name;
+    std::uint64_t bytes;
+  };
+
+  // Distinct file name so the two outputs are never confused side by side.
+  std::string root_file_for(std::string const& variant)
+  {
+    return variant == "shuffle" ? "strategy_one_shuffled.root" : "strategy_one.root";
+  }
+
+  // One manifest per strategy: shared product registry plus every variant's
+  // file (relative to the strategy root), size, and seed (shuffle only).
   void write_manifest(fs::path const& path,
-                      std::string const& root_file_name,
                       std::uint64_t num_events,
                       std::uint64_t total_particles,
-                      std::vector<std::string> const& variants,
+                      std::vector<VariantResult> const& variants,
                       std::uint64_t shuffle_seed)
   {
     struct ProductDesc {
@@ -78,18 +87,17 @@ namespace {
 
     nlohmann::json manifest;
     manifest["strategy"] = "strategy_one";
-    manifest["root_file"] = root_file_name;
     manifest["num_events"] = num_events;
     manifest["total_particles"] = total_particles;
 
     manifest["variants"] = nlohmann::json::array();
-    for (std::string const& v : variants) {
+    for (VariantResult const& v : variants) {
       nlohmann::json vj;
-      vj["name"] = v;
-      vj["dir"] = v; // subfolder under the strategy root that holds this variant
-      // data file path, relative to the strategy root (where this manifest lives)
-      vj["file"] = (fs::path{v} / root_file_name).generic_string();
-      if (v == "shuffle")
+      vj["name"] = v.name;
+      vj["dir"] = v.name;
+      vj["file"] = (fs::path{v.name} / v.file_name).generic_string();
+      vj["file_bytes"] = v.bytes;
+      if (v.name == "shuffle")
         vj["shuffle_seed"] = shuffle_seed;
       manifest["variants"].push_back(vj);
     }
@@ -213,32 +221,35 @@ int main(int argc, char** argv)
       total_particles += pf.size() / 3;
     std::cout << "loaded " << num_events << " events, " << total_particles << " particles\n";
 
-    constexpr char const* kRootFile = "strategy_one.root";
+    std::vector<VariantResult> results;
     for (std::string const& variant : cfg.variants) {
       std::vector<std::uint64_t> order = fgs::event_order(num_events, variant, cfg.shuffle_seed);
 
       fs::path dir = cfg.output_root / variant;
       fs::create_directories(dir);
-      fs::path root_path = dir / kRootFile;
+      std::string file_name = root_file_for(variant);
+      fs::path root_path = dir / file_name;
 
       auto t_start = std::chrono::steady_clock::now();
       write_variant(positions, momenta, order, root_path);
       auto t_end = std::chrono::steady_clock::now();
 
+      auto bytes = static_cast<std::uint64_t>(fs::file_size(root_path));
+      results.push_back({variant, file_name, bytes});
+
       double wall_s = std::chrono::duration<double>(t_end - t_start).count();
       std::cout << "variant   : " << variant << "\n"
                 << "  output  : " << root_path << "\n"
-                << "  size    : " << fs::file_size(root_path) << " bytes\n"
+                << "  size    : " << bytes << " bytes\n"
                 << "  wall    : " << wall_s << " s\n";
     }
 
     // One manifest for the whole strategy (product registry + variant list).
     fs::create_directories(cfg.output_root);
     write_manifest(cfg.output_root / "manifest.json",
-                   kRootFile,
                    num_events,
                    total_particles,
-                   cfg.variants,
+                   results,
                    cfg.shuffle_seed);
 
     return 0;

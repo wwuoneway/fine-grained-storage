@@ -23,7 +23,7 @@ output/writing/rntuple/strategy_one/
   no-shuffle/                 events written in event order (0,1,2,...)
     strategy_one.root         one ROOT TFile: 2 data RNTuples + 1 index TTree
   shuffle/                    events written in a seeded shuffle (e.g. 3,10,1,5,...)
-    strategy_one.root
+    strategy_one_shuffled.root
 ```
 
 A "data product" here is one physics quantity per particle. There are two:
@@ -199,12 +199,11 @@ reading only this file — no ROOT, no opening the `.root`.
 ```json
 {
     "strategy": "strategy_one",
-    "root_file": "strategy_one.root",
     "num_events": 10000,
     "total_particles": 69919,
     "variants": [
-        { "name": "no-shuffle", "dir": "no-shuffle", "file": "no-shuffle/strategy_one.root" },
-        { "name": "shuffle", "dir": "shuffle", "file": "shuffle/strategy_one.root", "shuffle_seed": 7 }
+        { "name": "no-shuffle", "dir": "no-shuffle", "file": "no-shuffle/strategy_one.root", "file_bytes": 3747455 },
+        { "name": "shuffle", "dir": "shuffle", "file": "shuffle/strategy_one_shuffled.root", "file_bytes": 3853374, "shuffle_seed": 7 }
     ],
     "products": [
         {
@@ -230,13 +229,13 @@ reading only this file — no ROOT, no opening the `.root`.
 | Field                  | Meaning                                                  |
 |------------------------|----------------------------------------------------------|
 | `strategy`             | which write strategy produced this output                |
-| `root_file`            | the ROOT file name inside each variant folder            |
 | `num_events`           | events written (the writer's source of truth)            |
 | `total_particles`      | sum of all particles written                             |
 | `variants[]`           | one entry per write variant                              |
 | `.name`                | variant name (`no-shuffle` / `shuffle`)                  |
 | `.dir`                 | subfolder under the strategy root holding this variant   |
 | `.file`                | data ROOT file, path relative to the strategy root       |
+| `.file_bytes`          | on-disk size of that variant's ROOT file                 |
 | `.shuffle_seed`        | seed for the permutation (present only on `shuffle`)     |
 | `products[]`           | one entry per data product                               |
 | `.product_id`          | numeric minor key for the index (`0`=position,`1`=momentum) |
@@ -272,7 +271,7 @@ the same otherwise.
                             BuildIndex(event_id, product_id)       read only a target event's
                                              │                     rows; cross-check values vs
                                              ▼                     the Phase 1 originals (==)
-                   strategy_one/<variant>/strategy_one.root                  │
+                   strategy_one/<variant>/<root file>                       │
                    strategy_one/manifest.json (one) ─────────────────────────┘
 ```
 

@@ -91,13 +91,13 @@ need to regenerate.
   whole strategy at the root:
   ```
   output/writing/rntuple/strategy_one/
-    manifest.json                  product registry + variant list (one per strategy)
-    no-shuffle/strategy_one.root   (events in event order)
-    shuffle/strategy_one.root      (events in a seeded shuffle)
+    manifest.json                         product registry + variant list (one per strategy)
+    no-shuffle/strategy_one.root          (events in event order)
+    shuffle/strategy_one_shuffled.root    (events in a seeded shuffle; distinct name)
   ```
-  Each `strategy_one.root` holds the position + momentum RNTuples and the shared
-  index TTree; the single manifest lists the products and the variants (with the
-  shuffle seed recorded on the shuffled one).
+  Each variant's ROOT file holds the position + momentum RNTuples and the shared
+  index TTree; the single manifest lists the products and the variants (each with
+  its file path, on-disk size, and the shuffle seed on the shuffled one).
 - The shuffle (`shuffle_seed`) only changes the physical row layout; the index
   makes reads order-independent, so both variants return identical per-event data.
 - Prints per-variant file size and wall time.

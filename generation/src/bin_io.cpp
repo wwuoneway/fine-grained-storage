@@ -3,6 +3,7 @@
 #include <bit>
 #include <fstream>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 // Compile-time contract: Position and Momentum must be 3 contiguous floats
@@ -260,10 +261,11 @@ namespace fgs {
     std::vector<std::vector<float>> events;
     events.reserve(reader.num_events());
 
+    // read_next() resizes `floats` each call, so moving it out is safe.
     std::vector<float> floats;
     std::uint32_t n = 0;
     while (reader.read_next(n, floats))
-      events.push_back(floats); // copy: each event keeps its own buffer
+      events.push_back(std::move(floats));
 
     return events;
   }

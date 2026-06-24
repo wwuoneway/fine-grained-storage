@@ -1,8 +1,10 @@
 // fgs_verify: cross-check strategy_one output against the Phase 1 binaries, for
 // every write variant (no-shuffle, shuffle).
 //
-// Usage: fgs_verify [--all] [strategy_output_root [gen_dir]]
-//   --all                 verify every event (default: sample events 42 + last)
+// Usage: fgs_verify [--all] [--events a,b,c] [strategy_output_root [gen_dir]]
+//   --all                 verify every event
+//   --events a,b,c        verify these specific event ids
+//   (one of --all or --events is required)
 //   strategy_output_root  default: output/writing/rntuple/strategy_one
 //   gen_dir               default: output/generation
 
@@ -19,6 +21,7 @@
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <numeric>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -50,6 +53,7 @@ namespace {
                       std::uint64_t pos_id,
                       std::uint64_t mom_id,
                       std::vector<fgs::Event> const& events,
+                      std::vector<std::uint64_t> const& user_events,
                       bool check_all)
   {
     std::uint64_t num_events = events.size();
@@ -77,16 +81,14 @@ namespace {
     auto mz = mom_reader->GetView<float>("pz");
     auto mev = mom_reader->GetView<std::uint64_t>("event_id");
 
-    // Default: sample events 42 (if present) and the last one. With check_all
-    // (the --all flag), verify every event — an exhaustive integrity check.
+    // --all verifies every event (exhaustive); otherwise verify exactly the
+    // event ids the user requested via --events (validated in main()).
     std::vector<std::uint64_t> targets;
     if (check_all) {
       targets.resize(num_events);
       std::iota(targets.begin(), targets.end(), std::uint64_t{0});
     } else {
-      if (num_events > 42)
-        targets.push_back(42);
-      targets.push_back(num_events - 1);
+      targets = user_events;
     }
 
     for (std::uint64_t target : targets) {
@@ -132,16 +134,26 @@ namespace {
 
 int main(int argc, char** argv)
 {
-  // Parse args: optional --all flag plus up to two positional paths.
+  // Parse args: --all and/or --events a,b,c, plus up to two positional paths.
   bool check_all = false;
+  std::vector<std::uint64_t> user_events;
   std::vector<std::string> positional;
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
-    if (a == "--all")
+    if (a == "--all") {
       check_all = true;
-    else
+    } else if (a == "--events") {
+      require(i + 1 < argc, "--events requires a comma-separated list of event ids");
+      std::stringstream ss(argv[++i]);
+      std::string tok;
+      while (std::getline(ss, tok, ','))
+        if (!tok.empty())
+          user_events.push_back(std::stoull(tok));
+    } else {
       positional.push_back(a);
+    }
   }
+  require(check_all || !user_events.empty(), "specify --all or --events a,b,c");
   fs::path strat_root = positional.size() > 0 ? fs::path{positional[0]}
                                               : fs::path{"output/writing/rntuple/strategy_one"};
   fs::path gen_dir =
@@ -168,12 +180,17 @@ int main(int argc, char** argv)
           "gen dir has " + std::to_string(events.size()) + " events but manifest says " +
             std::to_string(num_events) + " (regenerate or re-run the writer)");
 
+  // Reject any requested event id that does not exist before reading.
+  for (std::uint64_t id : user_events)
+    require(id < num_events, "requested event " + std::to_string(id) + " is out of range (" +
+                               std::to_string(num_events) + " events)");
+
   auto const& variants = manifest.at("variants");
   for (auto const& v : variants) {
     std::string variant = v.at("name").get<std::string>();
     // The manifest gives each variant's data file relative to the strategy root.
     fs::path root_path = strat_root / v.at("file").get<std::string>();
-    verify_variant(root_path, variant, pos_id, mom_id, events, check_all);
+    verify_variant(root_path, variant, pos_id, mom_id, events, user_events, check_all);
   }
 
   std::cout << "\nall " << variants.size() << " variant(s) verified — index returns identical "

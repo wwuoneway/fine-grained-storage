@@ -34,6 +34,9 @@ namespace {
   constexpr std::uint64_t PRODUCT_ID_POSITION = 0;
   constexpr std::uint64_t PRODUCT_ID_MOMENTUM = 1;
 
+  // Components per particle in a product's flat float buffer (x,y,z / px,py,pz).
+  constexpr std::uint64_t kComponents = 3;
+
   struct StrategyConfig {
     fs::path gen_dir;
     fs::path output_root;
@@ -118,7 +121,7 @@ namespace {
   }
 
   // Write one variant's ROOT file: two product RNTuples + the shared index TTree,
-  // iterating events in `order`. Each product's flat float buffer is 3 per particle.
+  // iterating events in `order`. Each product's flat float buffer is kComponents per particle.
   void write_variant(std::vector<std::vector<float>> const& positions,
                      std::vector<std::vector<float>> const& momenta,
                      std::vector<std::uint64_t> const& order,
@@ -158,13 +161,13 @@ namespace {
 
       for (std::uint64_t event_id : order) {
         std::vector<float> const& pf = positions[event_id];
-        std::uint64_t pos_n = pf.size() / 3;
+        std::uint64_t pos_n = pf.size() / kComponents;
         std::uint64_t pos_start = pos_writer->GetNEntries();
         for (std::uint64_t i = 0; i < pos_n; ++i) {
           *fld_pos_ei = event_id;
-          *fld_x = pf[3 * i];
-          *fld_y = pf[3 * i + 1];
-          *fld_z = pf[3 * i + 2];
+          *fld_x = pf[kComponents * i];
+          *fld_y = pf[kComponents * i + 1];
+          *fld_z = pf[kComponents * i + 2];
           pos_writer->Fill();
         }
         b_event_id = event_id;
@@ -176,13 +179,13 @@ namespace {
         index_tree->Fill();
 
         std::vector<float> const& mf = momenta[event_id];
-        std::uint64_t mom_n = mf.size() / 3;
+        std::uint64_t mom_n = mf.size() / kComponents;
         std::uint64_t mom_start = mom_writer->GetNEntries();
         for (std::uint64_t i = 0; i < mom_n; ++i) {
           *fld_mom_ei = event_id;
-          *fld_px = mf[3 * i];
-          *fld_py = mf[3 * i + 1];
-          *fld_pz = mf[3 * i + 2];
+          *fld_px = mf[kComponents * i];
+          *fld_py = mf[kComponents * i + 1];
+          *fld_pz = mf[kComponents * i + 2];
           mom_writer->Fill();
         }
         b_event_id = event_id;
@@ -218,7 +221,7 @@ int main(int argc, char** argv)
     std::uint64_t num_events = positions.size();
     std::uint64_t total_particles = 0;
     for (auto const& pf : positions)
-      total_particles += pf.size() / 3;
+      total_particles += pf.size() / kComponents;
     std::cout << "loaded " << num_events << " events, " << total_particles << " particles\n";
 
     std::vector<VariantResult> results;

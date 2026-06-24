@@ -248,7 +248,7 @@ int main(int argc, char** argv)
 
     std::vector<VariantResult> results;
     for (std::string const& variant : cfg.variants) {
-      std::vector<std::uint64_t> order = fgs::event_order(num_events, variant, cfg.shuffle_seed);
+      std::vector<std::uint64_t> order = fgs::write_order(num_events, variant, cfg.shuffle_seed);
 
       fs::path dir = cfg.output_root / variant;
       fs::create_directories(dir);

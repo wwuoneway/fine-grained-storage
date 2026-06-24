@@ -7,7 +7,7 @@
 
 namespace fgs {
 
-  std::vector<std::uint64_t> event_order(std::uint64_t n,
+  std::vector<std::uint64_t> write_order(std::uint64_t n,
                                          std::string const& variant,
                                          std::uint64_t seed)
   {
@@ -20,7 +20,7 @@ namespace fgs {
       std::shuffle(order.begin(), order.end(), std::mt19937_64{seed});
       return order;
     }
-    throw std::runtime_error("event_order: unknown variant \"" + variant +
+    throw std::runtime_error("write_order: unknown variant \"" + variant +
                              "\" (expected \"no-shuffle\" or \"shuffle\")");
   }
 

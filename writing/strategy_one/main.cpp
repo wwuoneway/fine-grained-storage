@@ -120,6 +120,29 @@ namespace {
     std::ofstream{path} << manifest.dump(4) << "\n";
   }
 
+  // Validate the loaded products before writing. Both must describe the same
+  // events, each event's flat buffer must be a whole number of particles
+  // (kComponents floats each), and the two products must agree on the particle
+  // count for every event — otherwise their index row ranges would not line up.
+  void validate_products(std::vector<std::vector<float>> const& positions,
+                         std::vector<std::vector<float>> const& momenta)
+  {
+    if (positions.size() != momenta.size())
+      throw std::runtime_error("position/momentum event counts differ");
+
+    for (std::uint64_t e = 0; e < positions.size(); ++e) {
+      if (positions[e].size() % kComponents != 0)
+        throw std::runtime_error("position buffer for event " + std::to_string(e) +
+                                 " is not a multiple of kComponents");
+      if (momenta[e].size() % kComponents != 0)
+        throw std::runtime_error("momentum buffer for event " + std::to_string(e) +
+                                 " is not a multiple of kComponents");
+      if (positions[e].size() != momenta[e].size())
+        throw std::runtime_error("position/momentum particle counts differ at event " +
+                                 std::to_string(e));
+    }
+  }
+
   // Write one variant's ROOT file: two product RNTuples + the shared index TTree,
   // iterating events in `order`. Each product's flat float buffer is kComponents per particle.
   void write_variant(std::vector<std::vector<float>> const& positions,
@@ -215,8 +238,7 @@ int main(int argc, char** argv)
     // Eager-load each product independently, once, outside any timer.
     std::vector<std::vector<float>> positions = fgs::load_product(cfg.gen_dir, "positions.bin");
     std::vector<std::vector<float>> momenta = fgs::load_product(cfg.gen_dir, "momenta.bin");
-    if (positions.size() != momenta.size())
-      throw std::runtime_error("position/momentum event counts differ");
+    validate_products(positions, momenta);
 
     std::uint64_t num_events = positions.size();
     std::uint64_t total_particles = 0;

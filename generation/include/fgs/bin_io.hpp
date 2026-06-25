@@ -75,4 +75,11 @@ namespace fgs {
   // Call this before starting a benchmark timer so .bin I/O is not measured.
   std::vector<Event> load_all_events(std::filesystem::path const& output_dir);
 
+  // Load one data product independently (e.g. positions alone), as DUNE treats
+  // data products separately. Opens gen_dir/file_name (e.g. "positions.bin") and
+  // returns its events in order: result[e] is event e's floats, 3 per particle.
+  // Does not reorder. Call before a benchmark timer so .bin I/O is excluded.
+  std::vector<std::vector<float>> load_product(std::filesystem::path const& gen_dir,
+                                               std::string const& file_name);
+
 }

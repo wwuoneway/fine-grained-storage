@@ -1,8 +1,8 @@
 {
-  "num_events": 10000000,
+  "num_events": 20000,
   "particles": { "min": 2, "max": 12 },
   "seed": 42,
-  "output_dir": "output",
+  "output_dir": "output/generation",
   "position": {
     "distribution": "uniform",
     "x": { "min": -150.0, "max": 150.0 },

@@ -8,3 +8,4 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 add_compile_options(-Wall -Wextra)
 
 add_subdirectory(generation)
+add_subdirectory(writing)

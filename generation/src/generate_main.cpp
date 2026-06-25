@@ -1,8 +1,8 @@
 // Usage:
 //   fgs_generate [path/to/config.json]
 //
-// With no argument it uses configs/default.json (resolved relative to the current working
-// directory) run it from the repo root.
+// With no argument it uses configs/generation/default.json (resolved relative to the current
+// working directory) run it from the repo root.
 
 #include <cstdlib>
 #include <exception>
@@ -18,7 +18,8 @@ int main(int argc, char** argv)
   // One optional positional argument: the config path. argv[0] is the program
   // name, so a real argument is at argv[1].
   std::filesystem::path const config_path =
-    (argc > 1) ? std::filesystem::path{argv[1]} : std::filesystem::path{"configs/default.json"};
+    (argc > 1) ? std::filesystem::path{argv[1]}
+               : std::filesystem::path{"configs/generation/default.json"};
 
   if (argc > 2) {
     std::cerr << "usage: " << argv[0] << " [config.json]\n";
@@ -36,7 +37,8 @@ int main(int argc, char** argv)
 
     auto fmt_mb = [](std::uint64_t b) -> std::string {
       std::ostringstream oss;
-      oss << std::fixed << std::setprecision(2) << static_cast<double>(b) / (1024.0 * 1024.0) << " MB";
+      oss << std::fixed << std::setprecision(2) << static_cast<double>(b) / (1024.0 * 1024.0)
+          << " MB";
       return oss.str();
     };
 

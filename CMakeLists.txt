@@ -9,3 +9,4 @@ add_compile_options(-Wall -Wextra)
 
 add_subdirectory(generation)
 add_subdirectory(writing)
+add_subdirectory(reading)

@@ -1,0 +1,2 @@
+add_executable(fgs_read_bench fgs_read_bench.cpp)
+target_link_libraries(fgs_read_bench PRIVATE fgs_reading)

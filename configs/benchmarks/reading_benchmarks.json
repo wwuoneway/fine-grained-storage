@@ -1,0 +1,103 @@
+{
+  "output_dir": "output/benchmarks/reading-benchmarks",
+  "benchmarks": [
+    {
+      "enabled": true,
+      "metadata": {
+        "name": "no-shuffle sequential cold",
+        "description": "Read no-shuffle layout in event-id order with OS cache eviction before every repetition.",
+        "variant": "no-shuffle"
+      },
+      "input_data": {
+        "root_file": "output/writing/rntuple/strategy_one",
+        "manifest_file": "output/writing/rntuple/strategy_one/manifest.json"
+      },
+      "num_events": 20000,
+      "access_pattern": "sequential",
+      "repetitions": 5,
+      "os_cache": {
+        "state": "cold",
+        "evict_method": "posix_fadvise"
+      },
+      "read_options": {
+        "cluster_cache": "off",
+        "implicit_mt": "off",
+        "metrics": true
+      }
+    },
+    {
+      "enabled": true,
+      "metadata": {
+        "name": "no-shuffle sequential warm",
+        "description": "Read no-shuffle layout in event-id order after a warmup pass, without OS cache eviction.",
+        "variant": "no-shuffle"
+      },
+      "input_data": {
+        "root_file": "output/writing/rntuple/strategy_one",
+        "manifest_file": "output/writing/rntuple/strategy_one/manifest.json"
+      },
+      "num_events": 20000,
+      "access_pattern": "sequential",
+      "repetitions": 5,
+      "os_cache": {
+        "state": "warm",
+        "evict_method": "none",
+        "warmup": true
+      },
+      "read_options": {
+        "cluster_cache": "off",
+        "implicit_mt": "off",
+        "metrics": true
+      }
+    },
+    {
+      "enabled": true,
+      "metadata": {
+        "name": "shuffle sequential cold",
+        "description": "Read shuffled physical layout in event-id order with OS cache eviction before every repetition.",
+        "variant": "shuffle"
+      },
+      "input_data": {
+        "root_file": "output/writing/rntuple/strategy_one",
+        "manifest_file": "output/writing/rntuple/strategy_one/manifest.json"
+      },
+      "num_events": 20000,
+      "access_pattern": "sequential",
+      "repetitions": 5,
+      "os_cache": {
+        "state": "cold",
+        "evict_method": "posix_fadvise"
+      },
+      "read_options": {
+        "cluster_cache": "off",
+        "implicit_mt": "off",
+        "metrics": true
+      }
+    },
+    {
+      "enabled": true,
+      "metadata": {
+        "name": "shuffle sequential warm",
+        "description": "Read shuffled physical layout in event-id order after a warmup pass, without OS cache eviction.",
+        "variant": "shuffle"
+      },
+      "input_data": {
+        "root_file": "output/writing/rntuple/strategy_one",
+        "manifest_file": "output/writing/rntuple/strategy_one/manifest.json"
+      },
+      "num_events": 20000,
+      "access_pattern": "sequential",
+      "repetitions": 5,
+      "os_cache": {
+        "state": "warm",
+        "evict_method": "none",
+        "warmup": true
+      },
+      "read_options": {
+        "cluster_cache": "off",
+        "implicit_mt": "off",
+        "metrics": true
+      }
+    }
+  ]
+}

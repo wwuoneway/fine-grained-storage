@@ -9,7 +9,7 @@
         "variant": "no-shuffle"
       },
       "input_data": {
-        "root_file": "output/writing/rntuple/strategy_one",
+        "root_file": "output/writing/rntuple/strategy_one/no-shuffle/strategy_one.root",
         "manifest_file": "output/writing/rntuple/strategy_one/manifest.json"
       },
       "num_events": 20000,
@@ -33,7 +33,7 @@
         "variant": "no-shuffle"
       },
       "input_data": {
-        "root_file": "output/writing/rntuple/strategy_one",
+        "root_file": "output/writing/rntuple/strategy_one/no-shuffle/strategy_one.root",
         "manifest_file": "output/writing/rntuple/strategy_one/manifest.json"
       },
       "num_events": 20000,
@@ -58,7 +58,7 @@
         "variant": "shuffle"
       },
       "input_data": {
-        "root_file": "output/writing/rntuple/strategy_one",
+        "root_file": "output/writing/rntuple/strategy_one/shuffle/strategy_one_shuffled.root",
         "manifest_file": "output/writing/rntuple/strategy_one/manifest.json"
       },
       "num_events": 20000,
@@ -82,7 +82,7 @@
         "variant": "shuffle"
       },
       "input_data": {
-        "root_file": "output/writing/rntuple/strategy_one",
+        "root_file": "output/writing/rntuple/strategy_one/shuffle/strategy_one_shuffled.root",
         "manifest_file": "output/writing/rntuple/strategy_one/manifest.json"
       },
       "num_events": 20000,

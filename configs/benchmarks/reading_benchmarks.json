@@ -22,7 +22,7 @@
       "read_options": {
         "cluster_cache": "off",
         "implicit_mt": "off",
-        "metrics": true
+        "metrics": false
       }
     },
     {
@@ -47,7 +47,7 @@
       "read_options": {
         "cluster_cache": "off",
         "implicit_mt": "off",
-        "metrics": true
+        "metrics": false
       }
     },
     {
@@ -71,7 +71,7 @@
       "read_options": {
         "cluster_cache": "off",
         "implicit_mt": "off",
-        "metrics": true
+        "metrics": false
       }
     },
     {
@@ -96,7 +96,7 @@
       "read_options": {
         "cluster_cache": "off",
         "implicit_mt": "off",
-        "metrics": true
+        "metrics": false
       }
     }
   ]

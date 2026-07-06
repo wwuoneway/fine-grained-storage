@@ -135,13 +135,14 @@ namespace {
                               std::uint64_t n_events_used)
   {
     std::cout << "\n=== " << bench.name << " ===\n"
-              << "variant       : " << bench.variant << "\n"
-              << "root file     : " << root_path << "\n"
-              << "events config : " << bench.num_events << "\n"
-              << "events used   : " << n_events_used << "\n"
-              << "repetitions   : " << bench.repetitions << "\n"
-              << "os cache      : " << cache_state_name(bench.cache_state) << "\n"
-              << "cluster cache : " << bench.cluster_cache << "\n";
+              << "variant         : " << bench.variant << "\n"
+              << "root file       : " << root_path << "\n"
+              << "access_pattern  : " << bench.access_pattern << "\n"
+              << "events config   : " << bench.num_events << "\n"
+              << "events used     : " << n_events_used << "\n"
+              << "repetitions     : " << bench.repetitions << "\n"
+              << "os cache        : " << cache_state_name(bench.cache_state) << "\n"
+              << "cluster cache   : " << bench.cluster_cache << "\n";
   }
 
   BenchmarkCase parse_benchmark(nlohmann::json const& j)
@@ -204,6 +205,7 @@ namespace {
     Measurement m;
     m.repetition = repetition;
 
+    //sequential read
     auto const start = std::chrono::steady_clock::now();
     for (std::uint64_t event_id : event_ids) {
       for (fgs::ProductSpec const& product : products) {

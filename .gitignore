@@ -21,6 +21,7 @@ __pycache__/
 # Editor / machine-specific
 # =========================
 .vscode/
+.idea/
 
 # =========================
 # OS files

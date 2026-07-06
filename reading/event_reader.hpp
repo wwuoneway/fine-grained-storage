@@ -91,6 +91,8 @@ namespace fgs {
     std::unique_ptr<TFile> file_;
     TTree* index_ = nullptr; // owned by file_
     std::map<std::string, Product> products_;
+    std::uint64_t row_start_ = 0;
+    std::uint64_t row_count_ = 0;
   };
 
 }

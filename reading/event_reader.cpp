@@ -46,6 +46,9 @@ namespace fgs {
       products_.emplace(spec.name, std::move(prod));
     }
 
+    index_->SetBranchAddress("row_start", &row_start_);
+    index_->SetBranchAddress("row_count", &row_count_);
+
     // The index holds one row per (event, product), so the event count is the
     // number of index rows divided by the number of products.
     num_events_ =
@@ -66,10 +69,6 @@ namespace fgs {
   {
     Product& p = product(name);
 
-    std::uint64_t row_start = 0, row_count = 0;
-    index_->SetBranchAddress("row_start", &row_start);
-    index_->SetBranchAddress("row_count", &row_count);
-
     // O(log N) lookup straight to this event's index row for this product.
     Long64_t const e =
       index_->GetEntryNumberWithIndex(static_cast<Long64_t>(event_id), static_cast<Long64_t>(p.id));
@@ -77,7 +76,7 @@ namespace fgs {
       throw std::runtime_error("EventReader: event " + std::to_string(event_id) +
                                " not found for product \"" + name + "\"");
     index_->GetEntry(e);
-    return {row_start, row_count};
+    return {row_start_, row_count_};
   }
 
   std::vector<float> EventReader::read_product(std::uint64_t event_id, std::string const& name)

@@ -24,7 +24,7 @@ import os
 import time
 
 DEFAULT_FILE = (
-    "output/writing/rntuple/strategy_one/no-shuffle/strategy_one.root"
+    "../output/writing/rntuple/strategy_one/no-shuffle/strategy_one.root"
 )
 CHUNK = 1 << 20  # 1 MiB read buffer
 

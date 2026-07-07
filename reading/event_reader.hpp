@@ -14,6 +14,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <iosfwd>
 #include <map>
 #include <memory>
 #include <string>
@@ -66,8 +67,11 @@ namespace fgs {
                                   std::string const& field);
 
     // Print ROOT's per-reader performance counters (no-op unless metrics were
-    // enabled in the read options passed to the constructor).
+    // enabled in the read options passed to the constructor). The stream
+    // overload writes the same report to an arbitrary sink (e.g. a file); the
+    // no-arg version writes to std::cout.
     void print_metrics() const;
+    void print_metrics(std::ostream& os) const;
 
   private:
     // Everything needed to read one product: its numeric index key, the RNTuple

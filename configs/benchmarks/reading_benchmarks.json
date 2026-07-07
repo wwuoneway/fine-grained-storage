@@ -1,9 +1,9 @@
 {
-  "output_dir": "output/benchmarks/reading-benchmarks",
   "benchmarks": [
     {
       "enabled": true,
       "metadata": {
+        "benchmark_num": 1,
         "name": "no-shuffle sequential cold",
         "description": "Read no-shuffle layout in event-id order with OS cache eviction before every repetition.",
         "variant": "no-shuffle"
@@ -22,12 +22,13 @@
       "read_options": {
         "cluster_cache": "off",
         "implicit_mt": "off",
-        "metrics": false
+        "metrics": true
       }
     },
     {
       "enabled": true,
       "metadata": {
+        "benchmark_num": 2,
         "name": "no-shuffle sequential warm",
         "description": "Read no-shuffle layout in event-id order after a warmup pass, without OS cache eviction.",
         "variant": "no-shuffle"
@@ -47,12 +48,13 @@
       "read_options": {
         "cluster_cache": "off",
         "implicit_mt": "off",
-        "metrics": false
+        "metrics": true
       }
     },
     {
       "enabled": true,
       "metadata": {
+        "benchmark_num": 3,
         "name": "shuffle sequential cold",
         "description": "Read shuffled physical layout in event-id order with OS cache eviction before every repetition.",
         "variant": "shuffle"
@@ -71,12 +73,13 @@
       "read_options": {
         "cluster_cache": "off",
         "implicit_mt": "off",
-        "metrics": false
+        "metrics": true
       }
     },
     {
       "enabled": true,
       "metadata": {
+        "benchmark_num": 4,
         "name": "shuffle sequential warm",
         "description": "Read shuffled physical layout in event-id order after a warmup pass, without OS cache eviction.",
         "variant": "shuffle"
@@ -96,7 +99,7 @@
       "read_options": {
         "cluster_cache": "off",
         "implicit_mt": "off",
-        "metrics": false
+        "metrics": true
       }
     }
   ]

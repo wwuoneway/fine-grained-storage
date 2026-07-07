@@ -110,11 +110,13 @@ namespace fgs {
     return out;
   }
 
-  void EventReader::print_metrics() const
+  void EventReader::print_metrics() const { print_metrics(std::cout); }
+
+  void EventReader::print_metrics(std::ostream& os) const
   {
     for (auto const& [name, p] : products_) {
-      std::cout << "=== metrics: " << name << " ===\n";
-      p.reader->PrintInfo(ROOT::ENTupleInfo::kMetrics);
+      os << "=== metrics: " << name << " ===\n";
+      p.reader->PrintInfo(ROOT::ENTupleInfo::kMetrics, os);
     }
   }
 

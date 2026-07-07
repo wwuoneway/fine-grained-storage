@@ -145,6 +145,44 @@ cmake --build build -j$(nproc)
 
 ---
 
+## 5b. Phase 3 — read benchmark + plots
+
+Measure read performance across layout variants and cache states, emit CSV, and
+plot it.
+
+```bash
+./build/benchmarks/read/fgs_read_bench configs/benchmarks/reading_benchmarks.json
+```
+
+- Argument is optional; with none it uses `configs/benchmarks/reading_benchmarks.json`.
+- Each invocation writes a fresh **timestamped run folder** under a fixed base, so
+  re-running any config never overwrites earlier results:
+  ```
+  output/benchmarks/reading-benchmarks/<YYYYmmdd-HHMMSS>/
+    run_info.json              machine specs (CPU/cores/RAM/kernel/ROOT) + full config, once
+    summary.csv                one aggregated row per benchmark (drives the plots)
+    benchmark_<N>/             one self-contained folder per benchmark (N = metadata.benchmark_num)
+      benchmark.log            this benchmark's stdout (header + per-rep lines)
+      metadata.txt             this benchmark's config slice, human-readable
+      summary.txt              human aggregate over reps (mean/min)
+      csv/raw.csv              raw: one row per repetition (machine-readable)
+      runs/run_<M>.txt         per-repetition report: metadata + measurement + metrics table
+  ```
+  Each benchmark is identified by `metadata.benchmark_num` in the config (defaults
+  to config order). The per-rep `run_<M>.txt` metrics table adds a `readable`
+  column (bytes→MB, ns→ms) alongside the raw counter values.
+- Then render the plots (writes PNGs into `<run_dir>/plots/`; defaults to the
+  newest run):
+  ```bash
+  python3 scripts/plot_read_bench.py                                          # newest run
+  python3 scripts/plot_read_bench.py output/benchmarks/reading-benchmarks/<timestamp>
+  ```
+  Produces `latency_by_variant_cache.png`, `per_rep_stability.png`, and
+  `throughput.png`. Requires `matplotlib`; **run it without the Spack env active**
+  (matplotlib is a system package that Spack's Python shadows).
+
+---
+
 ## 6. Inspecting the output by hand (optional)
 
 ```bash

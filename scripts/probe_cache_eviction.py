@@ -88,12 +88,12 @@ def main() -> None:
 
     delta_ms = (bc - bw) * 1e3
     ratio = bc / bw
-    print(f"cold − warm = {delta_ms:.1f} ms   ({ratio:.1f}x slower cold)")
+    print(f"cold - warm = {delta_ms:.1f} ms   ({ratio:.1f}x slower cold)")
 
     if ratio >= 1.3:
         print("=> eviction works: cold reads are measurably slower.")
     else:
-        print("=> no clear difference — fadvise may be a no-op on this filesystem,")
+        print("=> no clear difference: fadvise may be a no-op on this filesystem,")
         print("   or the file is small enough that re-faulting is negligible.")
 
 

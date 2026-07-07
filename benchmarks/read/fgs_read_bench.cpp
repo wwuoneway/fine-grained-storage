@@ -6,6 +6,7 @@
 #include <fstream>
 #include <iostream>
 #include <numeric>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <unistd.h>
@@ -14,16 +15,20 @@
 #include <ROOT/RNTupleReadOptions.hxx>
 #include <nlohmann/json.hpp>
 
+#include "bench_report.hpp"
 #include "event_reader.hpp"
 
 namespace fs = std::filesystem;
 
 namespace {
 
+  using fgs::bench::Measurement;
+
   enum class CacheState { Cold, Warm };
 
   struct BenchmarkCase {
     bool enabled = true;
+    int benchmark_num = 0;
     std::string name;
     std::string description;
     std::string variant;
@@ -38,14 +43,6 @@ namespace {
     std::string cluster_cache = "off";
     std::string implicit_mt = "off";
     bool metrics = false;
-  };
-
-  struct Measurement {
-    std::uint64_t repetition = 0;
-    double wall_s = 0.0;
-    double latency_us_per_event = 0.0;
-    std::uint64_t total_values = 0;
-    double checksum = 0.0;
   };
 
   std::string cache_state_name(CacheState state)
@@ -130,19 +127,30 @@ namespace {
     return ids;
   }
 
-  void print_benchmark_header(BenchmarkCase const& bench,
+  // Write the same text to stdout and to the run.txt log, so there is always a
+  // scannable plain-text record next to the CSVs.
+  void tee(std::ostream& log, std::string const& text)
+  {
+    std::cout << text;
+    log << text;
+  }
+
+  void print_benchmark_header(std::ostream& log,
+                              BenchmarkCase const& bench,
                               fs::path const& root_path,
                               std::uint64_t n_events_used)
   {
-    std::cout << "\n=== " << bench.name << " ===\n"
-              << "variant         : " << bench.variant << "\n"
-              << "root file       : " << root_path << "\n"
-              << "access_pattern  : " << bench.access_pattern << "\n"
-              << "events config   : " << bench.num_events << "\n"
-              << "events used     : " << n_events_used << "\n"
-              << "repetitions     : " << bench.repetitions << "\n"
-              << "os cache        : " << cache_state_name(bench.cache_state) << "\n"
-              << "cluster cache   : " << bench.cluster_cache << "\n";
+    std::ostringstream os;
+    os << "\n=== " << bench.name << " ===\n"
+       << "variant         : " << bench.variant << "\n"
+       << "root file       : " << root_path << "\n"
+       << "access_pattern  : " << bench.access_pattern << "\n"
+       << "events config   : " << bench.num_events << "\n"
+       << "events used     : " << n_events_used << "\n"
+       << "repetitions     : " << bench.repetitions << "\n"
+       << "os cache        : " << cache_state_name(bench.cache_state) << "\n"
+       << "cluster cache   : " << bench.cluster_cache << "\n";
+    tee(log, os.str());
   }
 
   BenchmarkCase parse_benchmark(nlohmann::json const& j)
@@ -151,6 +159,7 @@ namespace {
     bench.enabled = j.value("enabled", true);
 
     auto const& metadata = j.at("metadata");
+    bench.benchmark_num = metadata.value("benchmark_num", 0);
     bench.name = metadata.at("name").get<std::string>();
     bench.description = metadata.value("description", "");
     bench.variant = metadata.at("variant").get<std::string>();
@@ -187,17 +196,13 @@ namespace {
     return bench;
   }
 
-  [[maybe_unused]] double consume_values(std::vector<float> const& values)
-  {
-    return std::accumulate(values.begin(), values.end(), 0.0);
-  }
-
   Measurement read_once(BenchmarkCase const& bench,
                         fs::path const& root_path,
                         std::string const& index_name,
                         std::vector<fgs::ProductSpec> const& products,
                         std::vector<std::uint64_t> const& event_ids,
-                        std::uint64_t repetition)
+                        std::uint64_t repetition,
+                        std::string& metrics_raw)
   {
     ROOT::RNTupleReadOptions opts = make_read_options(bench);
     fgs::EventReader reader(root_path, index_name, products, opts);
@@ -205,12 +210,17 @@ namespace {
     Measurement m;
     m.repetition = repetition;
 
+    // Cheap dead-code-elimination sink: counting the values read keeps `values`
+    // used so the optimizer can't drop the read loop, without adding arithmetic
+    // weight (a full-value checksum) to the timed region.
+    std::uint64_t total_values = 0;
+
     //sequential read
     auto const start = std::chrono::steady_clock::now();
     for (std::uint64_t event_id : event_ids) {
       for (fgs::ProductSpec const& product : products) {
         std::vector<float> values = reader.read_product(event_id, product.name);
-        (void)values;
+        total_values += values.size();
       }
     }
     auto const stop = std::chrono::steady_clock::now();
@@ -219,9 +229,14 @@ namespace {
     // Keep the timer focused on the read loop
     m.wall_s = std::chrono::duration<double>(stop - start).count();
     m.latency_us_per_event = m.wall_s / static_cast<double>(event_ids.size()) * 1.0e6;
+    m.throughput_evt_s = m.wall_s > 0.0 ? static_cast<double>(event_ids.size()) / m.wall_s : 0.0;
+    m.total_values = total_values;
 
-    if (bench.metrics)
-      reader.print_metrics();
+    if (bench.metrics) {
+      std::ostringstream raw;
+      reader.print_metrics(raw);
+      metrics_raw = raw.str();
+    }
 
     return m;
   }
@@ -234,10 +249,13 @@ namespace {
   {
     BenchmarkCase warmup_case = bench;
     warmup_case.metrics = false;
-    (void)read_once(warmup_case, root_path, index_name, products, event_ids, 0);
+    std::string discard;
+    (void)read_once(warmup_case, root_path, index_name, products, event_ids, 0, discard);
   }
 
-  void run_read_benchmark(BenchmarkCase const& bench)
+  void run_read_benchmark(BenchmarkCase const& bench,
+                          fs::path const& run_dir,
+                          std::ostream& summary_csv)
   {
     nlohmann::json manifest = load_json(bench.manifest_file);
     std::string index_name;
@@ -245,12 +263,37 @@ namespace {
     fs::path root_path = bench.root_file;
     std::vector<fs::path> container_paths{root_path};
 
-    fgs::EventReader probe(root_path, index_name, products, make_read_options(bench));
-    std::uint64_t const n_events = std::min(bench.num_events, probe.num_events());
+    std::uint64_t const n_events = [&] {
+      ROOT::RNTupleReadOptions probe_opts;
+      probe_opts.SetClusterCache(ROOT::RNTupleReadOptions::EClusterCache::kOff);
+      fgs::EventReader probe(root_path, index_name, products, probe_opts);
+      return std::min(bench.num_events, probe.num_events());
+    }();
     std::vector<std::uint64_t> event_ids = make_event_ids(n_events, bench.access_pattern);
 
-    print_benchmark_header(bench, root_path, n_events);
+    // One self-contained folder per benchmark.
+    fs::path const bench_dir = run_dir / ("benchmark_" + std::to_string(bench.benchmark_num));
+    fs::create_directories(bench_dir / "csv");
+    fs::create_directories(bench_dir / "runs");
 
+    fgs::bench::BenchmarkId id{bench.benchmark_num,
+                               bench.name,
+                               bench.description,
+                               bench.variant,
+                               bench.access_pattern,
+                               cache_state_name(bench.cache_state),
+                               bench.cluster_cache,
+                               n_events,
+                               bench.repetitions,
+                               bench.root_file.string(),
+                               bench.manifest_file.string()};
+    fgs::bench::write_benchmark_metadata(bench_dir / "metadata.txt", id);
+
+    std::ofstream log(bench_dir / "benchmark.log");
+    print_benchmark_header(log, bench, root_path, n_events);
+
+    std::vector<Measurement> reps;
+    reps.reserve(bench.repetitions);
     for (std::uint64_t rep = 1; rep <= bench.repetitions; ++rep) {
       if (bench.cache_state == CacheState::Cold) {
         for (fs::path const& path : container_paths)
@@ -259,12 +302,25 @@ namespace {
         warm_cache(bench, root_path, index_name, products, event_ids);
       }
 
-      Measurement m = read_once(bench, root_path, index_name, products, event_ids, rep);
+      std::string const started = fgs::bench::timestamp_human();
+      std::string metrics_raw;
+      Measurement m =
+        read_once(bench, root_path, index_name, products, event_ids, rep, metrics_raw);
 
-      std::cout << "rep " << rep << " wall_s=" << m.wall_s
-                << " latency_us_per_event=" << m.latency_us_per_event
-                << " values=" << m.total_values << "\n";
+      std::ostringstream line;
+      line << "rep " << rep << " wall_s=" << m.wall_s
+           << " latency_us_per_event=" << m.latency_us_per_event
+           << " throughput_evt_s=" << m.throughput_evt_s << " values=" << m.total_values << "\n\n";
+      tee(log, line.str());
+
+      fgs::bench::write_run_report(
+        bench_dir / "runs" / ("run_" + std::to_string(rep) + ".txt"), id, m, started, metrics_raw);
+      reps.push_back(m);
     }
+
+    fgs::bench::write_raw_csv(bench_dir / "csv" / "raw.csv", id, reps);
+    fgs::bench::write_benchmark_summary_txt(bench_dir / "summary.txt", id, reps);
+    fgs::bench::append_summary_row(summary_csv, id, reps);
   }
 
 }
@@ -276,12 +332,31 @@ int main(int argc, char** argv)
 
   try {
     nlohmann::json config = load_json(config_path);
+
+    // Each invocation gets its own timestamped run folder under a fixed base, so
+    // re-running any config never overwrites earlier results. The run root holds
+    // the shared run_info.json (specs + config) and summary.csv; each benchmark
+    // gets its own self-contained subfolder.
+    fs::path const base = "output/benchmarks/reading-benchmarks";
+    fs::path const run_dir = base / fgs::bench::timestamp_now();
+    fs::create_directories(run_dir);
+
+    std::ofstream summary_csv(run_dir / "summary.csv");
+    summary_csv << fgs::bench::summary_header();
+    fgs::bench::write_run_info(run_dir / "run_info.json", config_path, config);
+
+    int index = 0;
     for (auto const& item : config.at("benchmarks")) {
+      ++index;
       BenchmarkCase bench = parse_benchmark(item);
+      if (bench.benchmark_num == 0)
+        bench.benchmark_num = index; // default to config order when unset
       if (!bench.enabled)
         continue;
-      run_read_benchmark(bench);
+      run_read_benchmark(bench, run_dir, summary_csv);
     }
+
+    std::cout << "\nresults written to " << run_dir << "\n";
     return 0;
   } catch (std::exception const& e) {
     std::cerr << "fgs_read_bench: error: " << e.what() << "\n";

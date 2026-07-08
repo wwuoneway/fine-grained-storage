@@ -5,7 +5,6 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <numeric>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -116,17 +115,6 @@ namespace {
     return opts;
   }
 
-  std::vector<std::uint64_t> make_event_ids(std::uint64_t n_events,
-                                            std::string const& access_pattern)
-  {
-    if (access_pattern != "sequential")
-      throw std::runtime_error("unsupported access_pattern \"" + access_pattern + "\"");
-
-    std::vector<std::uint64_t> ids(n_events);
-    std::iota(ids.begin(), ids.end(), std::uint64_t{0});
-    return ids;
-  }
-
   // Write the same text to stdout and to the run.txt log, so there is always a
   // scannable plain-text record next to the CSVs.
   void tee(std::ostream& log, std::string const& text)
@@ -200,7 +188,7 @@ namespace {
                         fs::path const& root_path,
                         std::string const& index_name,
                         std::vector<fgs::ProductSpec> const& products,
-                        std::vector<std::uint64_t> const& event_ids,
+                        std::uint64_t n_events,
                         std::uint64_t repetition,
                         std::string& metrics_raw)
   {
@@ -215,9 +203,11 @@ namespace {
     // weight (a full-value checksum) to the timed region.
     std::uint64_t total_values = 0;
 
-    //sequential read
+    // Sequential read: visit event ids 0..n_events-1 in order. Random/strided
+    // access (deliverable 3) would instead precompute a shuffled/strided vector
+    // of event ids and iterate that here.
     auto const start = std::chrono::steady_clock::now();
-    for (std::uint64_t event_id : event_ids) {
+    for (std::uint64_t event_id = 0; event_id < n_events; ++event_id) {
       for (fgs::ProductSpec const& product : products) {
         std::vector<float> values = reader.read_product(event_id, product.name);
         total_values += values.size();
@@ -225,11 +215,10 @@ namespace {
     }
     auto const stop = std::chrono::steady_clock::now();
 
-    //
     // Keep the timer focused on the read loop
     m.wall_s = std::chrono::duration<double>(stop - start).count();
-    m.latency_us_per_event = m.wall_s / static_cast<double>(event_ids.size()) * 1.0e6;
-    m.throughput_evt_s = m.wall_s > 0.0 ? static_cast<double>(event_ids.size()) / m.wall_s : 0.0;
+    m.latency_us_per_event = m.wall_s / static_cast<double>(n_events) * 1.0e6;
+    m.throughput_evt_s = m.wall_s > 0.0 ? static_cast<double>(n_events) / m.wall_s : 0.0;
     m.total_values = total_values;
 
     if (bench.metrics) {
@@ -245,12 +234,12 @@ namespace {
                   fs::path const& root_path,
                   std::string const& index_name,
                   std::vector<fgs::ProductSpec> const& products,
-                  std::vector<std::uint64_t> const& event_ids)
+                  std::uint64_t n_events)
   {
     BenchmarkCase warmup_case = bench;
     warmup_case.metrics = false;
     std::string discard;
-    (void)read_once(warmup_case, root_path, index_name, products, event_ids, 0, discard);
+    (void)read_once(warmup_case, root_path, index_name, products, n_events, 0, discard);
   }
 
   void run_read_benchmark(BenchmarkCase const& bench,
@@ -269,7 +258,10 @@ namespace {
       fgs::EventReader probe(root_path, index_name, products, probe_opts);
       return std::min(bench.num_events, probe.num_events());
     }();
-    std::vector<std::uint64_t> event_ids = make_event_ids(n_events, bench.access_pattern);
+    // TODO: extend for random, strided access (deliverable 3). Until then the
+    // read loop in read_once visits events sequentially, so reject anything else.
+    if (bench.access_pattern != "sequential")
+      throw std::runtime_error("unsupported access_pattern \"" + bench.access_pattern + "\"");
 
     // One self-contained folder per benchmark.
     fs::path const bench_dir = run_dir / ("benchmark_" + std::to_string(bench.benchmark_num));
@@ -299,13 +291,13 @@ namespace {
         for (fs::path const& path : container_paths)
           evict_from_cache(path);
       } else if (bench.warmup) {
-        warm_cache(bench, root_path, index_name, products, event_ids);
+        warm_cache(bench, root_path, index_name, products, n_events);
       }
 
       std::string const started = fgs::bench::timestamp_human();
       std::string metrics_raw;
       Measurement m =
-        read_once(bench, root_path, index_name, products, event_ids, rep, metrics_raw);
+        read_once(bench, root_path, index_name, products, n_events, rep, metrics_raw);
 
       std::ostringstream line;
       line << "rep " << rep << " wall_s=" << m.wall_s
@@ -346,6 +338,7 @@ int main(int argc, char** argv)
     fgs::bench::write_run_info(run_dir / "run_info.json", config_path, config);
 
     int index = 0;
+    int failures = 0;
     for (auto const& item : config.at("benchmarks")) {
       ++index;
       BenchmarkCase bench = parse_benchmark(item);
@@ -353,10 +346,20 @@ int main(int argc, char** argv)
         bench.benchmark_num = index; // default to config order when unset
       if (!bench.enabled)
         continue;
-      run_read_benchmark(bench, run_dir, summary_csv);
+      try {
+        run_read_benchmark(bench, run_dir, summary_csv);
+      } catch (std::exception const& e) {
+        ++failures;
+        std::cerr << "fgs_read_bench: benchmark " << bench.benchmark_num << " (" << bench.name
+                  << ") failed: " << e.what() << "\n";
+      }
     }
 
     std::cout << "\nresults written to " << run_dir << "\n";
+    if (failures > 0) {
+      std::cerr << "fgs_read_bench: " << failures << " benchmark(s) failed\n";
+      return 1;
+    }
     return 0;
   } catch (std::exception const& e) {
     std::cerr << "fgs_read_bench: error: " << e.what() << "\n";

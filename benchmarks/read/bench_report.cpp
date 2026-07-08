@@ -241,7 +241,7 @@ namespace fgs::bench {
   {
     std::ofstream out(path);
     if (!out)
-      return;
+      throw std::runtime_error("cannot write benchmark metadata: " + path.string());
     out << "benchmark_num  : " << id.num << '\n'
         << "name           : " << id.name << '\n'
         << "description    : " << id.description << '\n'
@@ -261,7 +261,7 @@ namespace fgs::bench {
   {
     std::ofstream out(path);
     if (!out)
-      return;
+      throw std::runtime_error("cannot write benchmark summary: " + path.string());
 
     Aggregates const a = aggregate(reps);
     out << "benchmark " << id.num << " - " << id.name << '\n'
@@ -357,7 +357,7 @@ namespace fgs::bench {
   {
     std::ofstream out(path);
     if (!out)
-      return;
+      throw std::runtime_error("cannot write run report: " + path.string());
 
     out << "benchmark " << id.num << " - " << id.name << "  (run " << m.repetition << ")\n"
         << "started              : " << started_at << '\n'

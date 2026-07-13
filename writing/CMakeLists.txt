@@ -1,4 +1,4 @@
-find_package(ROOT 6.38 REQUIRED COMPONENTS RIO ROOTNTuple Tree)
+find_package(ROOT 6.40.02 REQUIRED COMPONENTS RIO ROOTNTuple Tree)
 
 add_library(fgs_common STATIC common/ordering.cpp)
 target_include_directories(fgs_common PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

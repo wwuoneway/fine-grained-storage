@@ -1,4 +1,4 @@
-find_package(ROOT 6.38 REQUIRED COMPONENTS RIO ROOTNTuple Tree)
+find_package(ROOT 6.40.02 REQUIRED COMPONENTS RIO ROOTNTuple Tree)
 
 # EventReader: read-side library, reused by the demo driver (and later the
 # benchmark loop). Links fgs_generation for fgs::Event, reconstruct_event,

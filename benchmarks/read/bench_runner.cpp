@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -12,6 +13,7 @@
 #include <ROOT/RNTupleReadOptions.hxx>
 #include <nlohmann/json.hpp>
 
+#include "access_order.hpp"
 #include "bench_config.hpp"
 #include "bench_report.hpp"
 #include "event_reader.hpp"
@@ -74,16 +76,22 @@ namespace fgs::bench {
       Measurement m;
       m.repetition = repetition;
 
+      // Build the visitation order before the timer so ordering cost never enters
+      // the measured region. Sequential/strided are allocation-free; only random
+      // materializes a permutation (see access_order.hpp).
+      std::unique_ptr<EventOrder> order =
+        make_event_order(bench.access_pattern, n_events, bench.access_seed, bench.stride);
+
       // Cheap dead-code-elimination sink: counting the values read keeps `values`
       // used so the optimizer can't drop the read loop, without adding arithmetic
       // weight (a full-value checksum) to the timed region.
       std::uint64_t total_values = 0;
 
-      // Sequential read: visit event ids 0..n_events-1 in order. Random/strided
-      // access (deliverable 3) would instead precompute a shuffled/strided vector
-      // of event ids and iterate that here.
+      // Visit n_events events in the pattern's order (order->next() yields each id
+      // in [0, n_events) exactly once).
       auto const start = std::chrono::steady_clock::now();
-      for (std::uint64_t event_id = 0; event_id < n_events; ++event_id) {
+      for (std::uint64_t i = 0; i < n_events; ++i) {
+        std::uint64_t const event_id = order->next();
         for (fgs::ProductSpec const& product : products) {
           std::vector<float> values = reader.read_product(event_id, product.name);
           total_values += values.size();
@@ -136,10 +144,6 @@ namespace fgs::bench {
       fgs::EventReader probe(root_path, index_name, products, probe_opts);
       return std::min(bench.num_events, probe.num_events());
     }();
-    // TODO: extend for random, strided access (deliverable 3). Until then the
-    // read loop in read_once visits events sequentially, so reject anything else.
-    if (bench.access_pattern != "sequential")
-      throw std::runtime_error("unsupported access_pattern \"" + bench.access_pattern + "\"");
 
     // One self-contained folder per benchmark.
     fs::path const bench_dir = run_dir / ("benchmark_" + std::to_string(bench.benchmark_num));

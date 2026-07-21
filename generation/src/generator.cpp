@@ -142,7 +142,7 @@ namespace fgs {
     auto mb = [](std::uint64_t b) { return static_cast<double>(b) / (1024.0 * 1024.0); };
 
     // ordered_json preserves insertion order so the summary block appears at the
-    // top of the file — easy to scan without scrolling past config or events.
+    // top of the file -- easy to scan without scrolling past config or events.
     nlohmann::ordered_json manifest;
     manifest["format"] = "FGS2";
     manifest["num_events"] = stats.num_events;

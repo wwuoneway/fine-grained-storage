@@ -1,11 +1,11 @@
-// fgs_strategy_one: write strategy "strategy_one" — two data-product RNTuples
+// fgs_strategy_one: write strategy "strategy_one" -- two data-product RNTuples
 // (position, momentum) plus a shared TTree index, both inside one ROOT file.
 //
 // It emits one output folder per write variant under the strategy's output root:
 //   <output_root>/no-shuffle/strategy_one.root   (events written in event order)
 //   <output_root>/shuffle/strategy_one.root     (events written in a seeded shuffle)
 // Each folder also carries its own manifest.json. The shuffle changes only the
-// physical row layout — the index makes reads order-independent either way.
+// physical row layout -- the index makes reads order-independent either way.
 //
 // Usage: fgs_strategy_one [config.json]   (default: configs/writing/strategy_one.json)
 
@@ -123,7 +123,7 @@ namespace {
   // Validate the loaded products before writing. Both must describe the same
   // events, each event's flat buffer must be a whole number of particles
   // (kComponents floats each), and the two products must agree on the particle
-  // count for every event — otherwise their index row ranges would not line up.
+  // count for every event -- otherwise their index row ranges would not line up.
   void validate_products(std::vector<std::vector<float>> const& positions,
                          std::vector<std::vector<float>> const& momenta)
   {

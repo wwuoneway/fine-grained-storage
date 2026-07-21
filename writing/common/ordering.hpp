@@ -8,7 +8,7 @@ namespace fgs {
 
   // Build the order in which events are WRITTEN to disk (their physical storage
   // layout) for a given variant. Returns a permutation of [0, n) that the writer
-  // iterates over, writing each event in that sequence — so this vector is what
+  // iterates over, writing each event in that sequence -- so this vector is what
   // determines where each event physically lands in the file. It is not the
   // read-time access pattern, which is a separate downstream axis.
   //   "no-shuffle" -> identity (0,1,2,...): events stored in event-id order.

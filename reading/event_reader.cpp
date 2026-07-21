@@ -1,5 +1,6 @@
 #include "event_reader.hpp"
 
+#include <chrono>
 #include <iostream>
 #include <stdexcept>
 #include <unordered_map>
@@ -98,15 +99,33 @@ namespace fgs {
 
   std::vector<float> EventReader::read_product(std::uint64_t event_id, std::string const& name)
   {
-    Product& p = product(name);
-    RowRange rows = locate(event_id, name);
+    using clock = std::chrono::steady_clock;
+    auto const ns = [](auto d) { return std::chrono::duration<double, std::nano>(d).count(); };
 
+    Product& p = product(name);
+
+    clock::time_point t0;
+    if (instrument_) t0 = clock::now();
+    RowRange rows = locate(event_id, name);
+    if (instrument_) timers_.locate_ns += ns(clock::now() - t0);
+
+    clock::time_point tf;
+    if (instrument_) tf = clock::now();
     std::vector<float> out;
     out.reserve(rows.count * p.columns.size());
+    if (instrument_) timers_.fill_ns += ns(clock::now() - tf);
+
     for (std::uint64_t r = rows.start; r < rows.start + rows.count; ++r) {
+      clock::time_point tl;
+      if (instrument_) tl = clock::now();
       p.reader->LoadEntry(r); // whole-row read: refreshes every bound column pointer
+      if (instrument_) timers_.load_ns += ns(clock::now() - tl);
+
+      clock::time_point tp;
+      if (instrument_) tp = clock::now();
       for (std::shared_ptr<float> const& column : p.columns)
         out.push_back(*column);
+      if (instrument_) timers_.fill_ns += ns(clock::now() - tp);
     }
     return out;
   }

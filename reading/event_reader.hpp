@@ -53,6 +53,20 @@ namespace fgs {
 
     std::uint64_t num_events() const { return num_events_; }
 
+    // Splits the read loop's "Other" wall time (what RNTuple's read/unzip counters
+    // miss) into locate lookup, LoadEntry decode, and per-event vector fill. ns.
+    struct SubTimers {
+      double locate_ns = 0.0;
+      double load_ns = 0.0;
+      double fill_ns = 0.0;
+    };
+
+    // Off by default so the timed pass pays no clock-read overhead; the runner
+    // flips it on for a separate instrumented pass.
+    void set_instrument(bool on) { instrument_ = on; }
+    void reset_subtimers() { timers_ = SubTimers{}; }
+    SubTimers const& subtimers() const { return timers_; }
+
     // Read one product's rows for `event_id` as a flat float buffer (one
     // component per column, in the RNTuple's field order), via a whole-row
     // LoadEntry. Empty if the event has no particles. Throws if the event or
@@ -91,6 +105,9 @@ namespace fgs {
     // O(1) row-range lookup via the pre-built in-memory cache.
     // Throws if event_id was not present in the TTree at construction time.
     RowRange locate(std::uint64_t event_id, std::string const& name);
+
+    bool instrument_ = false;
+    SubTimers timers_;
 
     std::uint64_t num_events_ = 0;
     std::unique_ptr<TFile> file_;

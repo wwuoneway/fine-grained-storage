@@ -88,7 +88,6 @@ def emit_benchmark(ds_id, w_id, tier, write_root):
                 "read_options": {
                     "cluster_cache": cc,
                     "implicit_mt": imt,
-                    "metrics": r.get("metrics", True),
                 },
             }
         )

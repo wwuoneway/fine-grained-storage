@@ -106,6 +106,7 @@ namespace fgs::bench {
       double thr_mean = 0.0;
       double read_ms_mean = 0.0, unzip_ms_mean = 0.0, payload_mb_mean = 0.0;
       double n_read_mean = 0.0, read_eff_mean = 0.0;
+      double locate_ms_mean = 0.0, load_ms_mean = 0.0, fill_ms_mean = 0.0;
     };
 
     Aggregates aggregate(std::vector<Measurement> const& reps)
@@ -114,6 +115,7 @@ namespace fgs::bench {
       double thr_sum = 0.0;
       double read_ms_sum = 0.0, unzip_ms_sum = 0.0, payload_sum = 0.0;
       double n_read_sum = 0.0, read_eff_sum = 0.0;
+      double locate_sum = 0.0, load_sum = 0.0, fill_sum = 0.0;
       for (Measurement const& m : reps) {
         wall.push_back(m.wall_s);
         latency.push_back(m.latency_us_per_event);
@@ -123,6 +125,9 @@ namespace fgs::bench {
         payload_sum += m.counters.read_payload_mb;
         n_read_sum += static_cast<double>(m.counters.n_read);
         read_eff_sum += m.counters.read_efficiency;
+        locate_sum += m.locate_ms;
+        load_sum += m.load_ms;
+        fill_sum += m.fill_ms;
       }
       auto const n = static_cast<double>(reps.size());
       double const wall_mean = std::accumulate(wall.begin(), wall.end(), 0.0) / n;
@@ -137,7 +142,10 @@ namespace fgs::bench {
               unzip_ms_sum / n,
               payload_sum / n,
               n_read_sum / n,
-              read_eff_sum / n};
+              read_eff_sum / n,
+              locate_sum / n,
+              load_sum / n,
+              fill_sum / n};
     }
 
   }
@@ -275,7 +283,8 @@ namespace fgs::bench {
     return "benchmark_num,benchmark,variant,access_pattern,cache_state,cluster_cache,implicit_mt,"
            "num_events,reps,wall_s_mean,wall_s_min,latency_us_mean,latency_us_min,"
            "throughput_evt_s_mean,"
-           "read_wall_ms,unzip_wall_ms,read_payload_mb,n_read,read_efficiency\n";
+           "read_wall_ms,unzip_wall_ms,read_payload_mb,n_read,read_efficiency,"
+           "locate_ms,load_ms,fill_ms\n";
   }
 
   void write_raw_csv(fs::path const& path,
@@ -288,7 +297,8 @@ namespace fgs::bench {
 
     csv << "benchmark_num,benchmark,variant,access_pattern,cache_state,cluster_cache,implicit_mt,"
            "num_events,repetition,wall_s,latency_us_per_event,throughput_evt_s,total_values,"
-           "read_wall_ms,unzip_wall_ms,read_payload_mb,n_read,read_efficiency\n";
+           "read_wall_ms,unzip_wall_ms,read_payload_mb,n_read,read_efficiency,"
+           "locate_ms,load_ms,fill_ms\n";
     for (Measurement const& m : reps)
       csv << id.num << ',' << csv_field(id.name) << ',' << csv_field(id.variant) << ','
           << csv_field(id.access_pattern) << ',' << csv_field(id.cache_state) << ','
@@ -297,7 +307,8 @@ namespace fgs::bench {
           << m.throughput_evt_s << ',' << m.total_values << ','
           << m.counters.read_wall_ms << ',' << m.counters.unzip_wall_ms << ','
           << m.counters.read_payload_mb << ',' << m.counters.n_read << ','
-          << m.counters.read_efficiency << '\n';
+          << m.counters.read_efficiency << ','
+          << m.locate_ms << ',' << m.load_ms << ',' << m.fill_ms << '\n';
   }
 
   void append_summary_row(std::ostream& csv,
@@ -311,7 +322,8 @@ namespace fgs::bench {
         << ',' << a.reps << ',' << a.wall_mean << ',' << a.wall_min << ',' << a.lat_mean << ','
         << a.lat_min << ',' << a.thr_mean << ','
         << a.read_ms_mean << ',' << a.unzip_ms_mean << ',' << a.payload_mb_mean << ','
-        << a.n_read_mean << ',' << a.read_eff_mean << '\n';
+        << a.n_read_mean << ',' << a.read_eff_mean << ','
+        << a.locate_ms_mean << ',' << a.load_ms_mean << ',' << a.fill_ms_mean << '\n';
   }
 
   void write_benchmark_metadata(fs::path const& path, BenchmarkId const& id)

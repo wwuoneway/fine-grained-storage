@@ -18,6 +18,10 @@ DEFAULT_METRICS = [
     "read_payload_mb",    # bytes pulled from storage
     "n_read",             # read amplification (byte-range reads)
     "read_efficiency",    # payload / (payload + overhead)
+    # "Other"-segment breakdown (instrumented pass):
+    "locate_ms",          # row-range lookup
+    "load_ms",            # LoadEntry decode
+    "fill_ms",            # per-event vector alloc + copy
 ]
 
 # Optimisation direction per metric, used for the title and the colormap.
@@ -30,6 +34,9 @@ DIRECTION = {
     "read_payload_mb": ("lower = better", "RdYlGn_r"),
     "n_read": ("lower = better", "RdYlGn_r"),
     "read_efficiency": ("higher = better", "RdYlGn"),
+    "locate_ms": ("lower = better", "RdYlGn_r"),
+    "load_ms": ("lower = better", "RdYlGn_r"),
+    "fill_ms": ("lower = better", "RdYlGn_r"),
 }
 
 
@@ -56,6 +63,7 @@ def fmt(metric: str, v: float) -> str:
         return f"{v:.3f}"
     if metric in ("throughput_evt_s_mean", "n_read"):
         return f"{v:.0f}"
-    if metric in ("read_wall_ms", "unzip_wall_ms", "read_payload_mb"):
+    if metric in ("read_wall_ms", "unzip_wall_ms", "read_payload_mb",
+                  "locate_ms", "load_ms", "fill_ms"):
         return f"{v:.2f}"
     return f"{v:.1f}"

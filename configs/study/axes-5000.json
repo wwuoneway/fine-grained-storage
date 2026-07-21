@@ -34,8 +34,7 @@
         "cluster_cache": ["off", "on"],
         "implicit_mt": ["off", "default"],
         "num_events": 5000,
-        "repetitions": 5,
-        "metrics": true
+        "repetitions": 5
       }
     }
   }

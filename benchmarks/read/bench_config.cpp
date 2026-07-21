@@ -56,7 +56,7 @@ namespace fgs::bench {
       throw std::runtime_error("unknown read_options.implicit_mt \"" + bench.implicit_mt + "\"");
     }
 
-    opts.SetEnableMetrics(bench.metrics);
+    opts.SetEnableMetrics(true);
     return opts;
   }
 
@@ -89,7 +89,6 @@ namespace fgs::bench {
     auto const& read_options = j.at("read_options");
     bench.cluster_cache = read_options.value("cluster_cache", "off");
     bench.implicit_mt = read_options.value("implicit_mt", "off");
-    bench.metrics = read_options.value("metrics", false);
 
     if (bench.num_events == 0)
       throw std::runtime_error("benchmark \"" + bench.name + "\" has num_events=0");

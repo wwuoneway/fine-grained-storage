@@ -34,7 +34,6 @@ namespace fgs::bench {
     bool warmup = false;
     std::string cluster_cache = "off";
     std::string implicit_mt = "off";
-    bool metrics = false;
   };
 
   std::string cache_state_name(CacheState state);

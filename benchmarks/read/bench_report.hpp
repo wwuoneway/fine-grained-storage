@@ -40,6 +40,10 @@ namespace fgs::bench {
     std::uint64_t total_values = 0;
     // ROOT RNTuple counters for this pass (only when metrics are enabled).
     ReadCounters counters;
+    // "Other"-segment breakdown from the instrumented pass (ms).
+    double locate_ms = 0.0;
+    double load_ms = 0.0;
+    double fill_ms = 0.0;
   };
 
   // A benchmark's identity and configuration, used across the CSV rows and the

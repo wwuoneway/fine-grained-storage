@@ -145,8 +145,9 @@ namespace fgs::bench {
       return std::min(bench.num_events, probe.num_events());
     }();
 
-    // One self-contained folder per benchmark.
-    fs::path const bench_dir = run_dir / ("benchmark_" + std::to_string(bench.benchmark_num));
+    // One self-contained folder per benchmark, under the run's benchmarks/ dir.
+    fs::path const bench_dir =
+      run_dir / "benchmarks" / ("benchmark_" + std::to_string(bench.benchmark_num));
     fs::create_directories(bench_dir / "csv");
     fs::create_directories(bench_dir / "runs");
 
@@ -157,6 +158,7 @@ namespace fgs::bench {
                                bench.access_pattern,
                                cache_state_name(bench.cache_state),
                                bench.cluster_cache,
+                               bench.implicit_mt,
                                n_events,
                                bench.repetitions,
                                bench.root_file.string(),
@@ -179,11 +181,15 @@ namespace fgs::bench {
       std::string const started = fgs::bench::timestamp_human();
       std::string metrics_raw;
       Measurement m = read_once(bench, root_path, index_name, products, n_events, rep, metrics_raw);
+      if (bench.metrics)
+        m.counters = fgs::bench::parse_read_counters(metrics_raw);
 
       std::ostringstream line;
       line << "rep " << rep << " wall_s=" << m.wall_s
            << " latency_us_per_event=" << m.latency_us_per_event
-           << " throughput_evt_s=" << m.throughput_evt_s << " values=" << m.total_values << "\n\n";
+           << " throughput_evt_s=" << m.throughput_evt_s << " values=" << m.total_values
+           << " read_ms=" << m.counters.read_wall_ms << " unzip_ms=" << m.counters.unzip_wall_ms
+           << " n_read=" << m.counters.n_read << "\n\n";
       tee(log, line.str());
 
       fgs::bench::write_run_report(

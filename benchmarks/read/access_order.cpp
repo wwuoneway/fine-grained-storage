@@ -10,7 +10,7 @@ namespace fgs::bench {
 
   namespace {
 
-    // 0,1,2,... — just a counter, no storage.
+    // 0,1,2,... -- just a counter, no storage.
     class SequentialOrder : public EventOrder {
     public:
       std::uint64_t next() override { return cur_++; }
@@ -30,8 +30,12 @@ namespace fgs::bench {
       {
         std::uint64_t const id = cur_;
         cur_ += stride_;
-        if (cur_ >= n_)
-          cur_ = ++off_; // advance to the next phase offset
+        if (cur_ >= n_) {
+          ++off_;
+          if (off_ >= n_)
+            off_ = 0; // return to the start
+          cur_ = off_;
+        }
         return id;
       }
 

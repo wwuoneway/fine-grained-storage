@@ -32,10 +32,9 @@
         "access_seed": 1234,
         "cache": ["cold", "warm"],
         "cluster_cache": ["off", "on"],
-        "implicit_mt": ["off", "default"],
-        "num_events": 500,
-        "repetitions": 5,
-        "metrics": true
+        "implicit_mt": ["off"],
+        "num_events": 10000,
+        "repetitions": 4
       }
     }
   }

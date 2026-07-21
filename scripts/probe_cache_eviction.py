@@ -11,8 +11,8 @@ If eviction worked, the cold read is slower because it must fault from disk.
 Usage (run from the repo root):
     python3 scripts/probe_cache_eviction.py [FILE] [--runs N]
 
-    FILE    file to probe; defaults to the no-shuffle RNTuple from the
-            1M-event run (output/writing/rntuple/strategy_one/no-shuffle/strategy_one.root)
+    FILE    file to probe; defaults to the no-shuffle RNTuple of the smoke
+            dataset (output/writing/study/s20k_p2-10/default/no-shuffle/strategy_one.root)
     --runs  timed reads per state, default 5; we keep best-of-N to reduce
             noise from unrelated I/O on the machine
 
@@ -23,9 +23,7 @@ import argparse
 import os
 import time
 
-DEFAULT_FILE = (
-    "../output/writing/rntuple/strategy_one/no-shuffle/strategy_one.root"
-)
+DEFAULT_FILE = "output/writing/study/s20k_p2-10/default/no-shuffle/strategy_one.root"
 CHUNK = 1 << 20  # 1 MiB read buffer
 
 

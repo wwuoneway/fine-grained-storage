@@ -1,0 +1,42 @@
+{
+  "_comment": "Same matrix as axes.json but reading num_events raised to 5000. Dataset (s20k_p2-10) and writing output are shared with the 500-event run -- no regeneration needed.",
+  "output_roots": {
+    "generation": "output/generation/study",
+    "writing": "output/writing/study"
+  },
+  "defaults": {
+    "generation": {
+      "seed": 42,
+      "position": {
+        "distribution": "uniform",
+        "x": { "min": -150.0, "max": 150.0 },
+        "y": { "min": -75.0, "max": 75.0 },
+        "z": { "min": -500.0, "max": 500.0 }
+      },
+      "momentum": { "mean": 0.0, "stddev": 1.0, "min_magnitude": 0.05 }
+    }
+  },
+  "tiers": {
+    "smoke": {
+      "generation": {
+        "num_events": [20000],
+        "particles": [{ "min": 2, "max": 10 }]
+      },
+      "writing": {
+        "variants": ["no-shuffle", "shuffle"],
+        "shuffle_seed": 7
+      },
+      "reading": {
+        "access_pattern": ["sequential", "random", "strided"],
+        "stride": 16,
+        "access_seed": 1234,
+        "cache": ["cold", "warm"],
+        "cluster_cache": ["off", "on"],
+        "implicit_mt": ["off", "default"],
+        "num_events": 5000,
+        "repetitions": 5,
+        "metrics": true
+      }
+    }
+  }
+}

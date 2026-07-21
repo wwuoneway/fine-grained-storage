@@ -47,5 +47,13 @@ docs.me/
 # committed.
 output/
 
+.env
+
+# Study configs are regenerated from configs/study/axes.json by
+# scripts/gen_study_configs.py on each run; only the axes files are tracked.
+configs/generation/study/
+configs/writing/study/
+configs/benchmarks/study/
+
 # CMake build trees (also covered by build/ above, listed here for clarity).
 build/

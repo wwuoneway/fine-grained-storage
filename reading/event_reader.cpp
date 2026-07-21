@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <stdexcept>
+#include <unordered_map>
 #include <utility>
 
 #include <ROOT/REntry.hxx>
@@ -46,13 +47,33 @@ namespace fgs {
       products_.emplace(spec.name, std::move(prod));
     }
 
-    index_->SetBranchAddress("row_start", &row_start_);
-    index_->SetBranchAddress("row_count", &row_count_);
-
     // The index holds one row per (event, product), so the event count is the
     // number of index rows divided by the number of products.
     num_events_ =
       products.empty() ? 0 : static_cast<std::uint64_t>(index_->GetEntries()) / products.size();
+
+    // Build the per-product row-range cache: one sequential TTree scan, before
+    // any timed reads. After this block the TTree is never accessed again.
+    {
+      std::uint64_t ev = 0, pid = 0, rs = 0, rc = 0;
+      index_->SetBranchAddress("event_id",   &ev);
+      index_->SetBranchAddress("product_id", &pid);
+      index_->SetBranchAddress("row_start",  &rs);
+      index_->SetBranchAddress("row_count",  &rc);
+
+      std::unordered_map<std::uint64_t, Product*> by_id;
+      for (auto& [n, prod] : products_)
+        by_id[prod.id] = &prod;
+
+      Long64_t const n = index_->GetEntries();
+      for (Long64_t i = 0; i < n; ++i) {
+        index_->GetEntry(i);
+        auto it = by_id.find(pid);
+        if (it != by_id.end())
+          it->second->row_cache[ev] = {rs, rc};
+      }
+      index_->ResetBranchAddresses();
+    }
   }
 
   EventReader::~EventReader() = default;
@@ -68,15 +89,11 @@ namespace fgs {
   EventReader::RowRange EventReader::locate(std::uint64_t event_id, std::string const& name)
   {
     Product& p = product(name);
-
-    // O(log N) lookup straight to this event's index row for this product.
-    Long64_t const e =
-      index_->GetEntryNumberWithIndex(static_cast<Long64_t>(event_id), static_cast<Long64_t>(p.id));
-    if (e < 0)
+    auto it = p.row_cache.find(event_id);
+    if (it == p.row_cache.end())
       throw std::runtime_error("EventReader: event " + std::to_string(event_id) +
                                " not found for product \"" + name + "\"");
-    index_->GetEntry(e);
-    return {row_start_, row_count_};
+    return it->second;
   }
 
   std::vector<float> EventReader::read_product(std::uint64_t event_id, std::string const& name)

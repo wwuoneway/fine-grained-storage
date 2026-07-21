@@ -9,7 +9,7 @@
 // specific products exist: it reads the file it is given, using the registry it
 // is handed. Picking the file (e.g. no-shuffle vs shuffle) and extracting the
 // registry from the manifest are the caller's job. The per-product column fields
-// are discovered from each RNTuple itself — nothing about the data shape is
+// are discovered from each RNTuple itself -- nothing about the data shape is
 // hardcoded here.
 
 #include <cstdint>
@@ -18,6 +18,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <ROOT/RNTupleReadOptions.hxx>
@@ -39,8 +40,7 @@ namespace fgs {
   public:
     // Opens `root_file`, its index TTree (`index_name`), and one RNTuple reader
     // per entry in `products`. `opts` controls the read path (cluster cache /
-    // prefetch, implicit MT, metrics) and is forwarded to every product reader —
-    // see docs.me/learning/benchmarking.
+    // prefetch, implicit MT, metrics) and is forwarded to every product reader.
     EventReader(std::filesystem::path const& root_file,
                 std::string const& index_name,
                 std::vector<ProductSpec> const& products,
@@ -60,7 +60,7 @@ namespace fgs {
     std::vector<float> read_product(std::uint64_t event_id, std::string const& product);
 
     // Read a single field (column) of one product for `event_id`, via a column
-    // view (projection) rather than a whole-row read — one value per particle.
+    // view (projection) rather than a whole-row read -- one value per particle.
     // Throws if the event, product, or field is unknown.
     std::vector<float> read_field(std::uint64_t event_id,
                                   std::string const& product,
@@ -74,29 +74,28 @@ namespace fgs {
     void print_metrics(std::ostream& os) const;
 
   private:
+    struct RowRange { std::uint64_t start, count; };
+
     // Everything needed to read one product: its numeric index key, the RNTuple
-    // reader, and one pointer per component field, bound to the reader's default
-    // entry (discovered from the file). LoadEntry(row) refreshes every pointer.
+    // reader, one pointer per component field, and the pre-built row-range cache
+    // (populated once in the constructor by scanning the TTree sequentially).
     struct Product {
       std::uint64_t id = 0;
       std::unique_ptr<ROOT::RNTupleReader> reader;
       std::vector<std::shared_ptr<float>> columns;
+      std::unordered_map<std::uint64_t, RowRange> row_cache;
     };
-
-    struct RowRange { std::uint64_t start, count; };
 
     Product& product(std::string const& name);
 
-    // Look up event_id for the named product via the TTree index and return its
-    // row range in the product's RNTuple. Throws if the event is not found.
+    // O(1) row-range lookup via the pre-built in-memory cache.
+    // Throws if event_id was not present in the TTree at construction time.
     RowRange locate(std::uint64_t event_id, std::string const& name);
 
     std::uint64_t num_events_ = 0;
     std::unique_ptr<TFile> file_;
-    TTree* index_ = nullptr; // owned by file_
+    TTree* index_ = nullptr; // owned by file_; used only during construction
     std::map<std::string, Product> products_;
-    std::uint64_t row_start_ = 0;
-    std::uint64_t row_count_ = 0;
   };
 
 }

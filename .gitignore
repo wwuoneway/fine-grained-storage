@@ -49,6 +49,11 @@ output/
 
 .env
 
+# Local AI-agent / editor tooling; never commit.
+.claude/
+.agents/
+.codex/
+
 # Study configs are regenerated from configs/study/axes.json by
 # scripts/gen_study_configs.py on each run; only the axes files are tracked.
 configs/generation/study/

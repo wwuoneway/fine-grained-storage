@@ -44,6 +44,10 @@ namespace fgs::bench {
     double locate_ms = 0.0;
     double load_ms = 0.0;
     double fill_ms = 0.0;
+    // Wall of the instrumented pass itself: the sub-timers are nested inside
+    // this wall (not wall_s, which is a different execution), so residuals
+    // against it stay non-negative.
+    double wall_instr_ms = 0.0;
   };
 
   // A benchmark's identity and configuration, used across the CSV rows and the

@@ -200,6 +200,7 @@ namespace fgs::bench {
       m.locate_ms = instr.locate_ms;
       m.load_ms = instr.load_ms;
       m.fill_ms = instr.fill_ms;
+      m.wall_instr_ms = instr.wall_s * 1000.0;
 
       std::ostringstream line;
       line << "rep " << rep << " wall_s=" << m.wall_s

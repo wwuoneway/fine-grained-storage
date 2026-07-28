@@ -22,8 +22,9 @@ namespace fgs::bench {
     virtual ~EventOrder() = default;
   };
 
-  // Build the generator for a pattern. Throws on an unknown pattern, and on
-  // stride == 0 for the strided pattern.
+  // Build the generator for a pattern. Throws on an unknown pattern, and for
+  // the strided pattern on stride == 0 or stride >= n (which would degenerate
+  // to a sequential order).
   //   sequential : 0,1,...,n-1          (best-case locality)
   //   random     : Fisher-Yates shuffle (mt19937_64 seeded by `seed`)
   //   strided    : hop by `stride`       (full permutation)

@@ -77,6 +77,12 @@ namespace fgs::bench {
     if (pattern == "strided") {
       if (stride == 0)
         throw std::runtime_error("strided access_pattern requires stride > 0");
+      // stride >= n makes every hop wrap immediately: a sequential order
+      // mislabelled as strided.
+      if (stride >= n)
+        throw std::runtime_error("strided access_pattern requires stride < num_events (stride=" +
+                                 std::to_string(stride) + ", num_events=" + std::to_string(n) +
+                                 ")");
       return std::make_unique<StridedOrder>(n, stride);
     }
     throw std::runtime_error("unknown access_pattern \"" + pattern + "\"");

@@ -8,7 +8,10 @@ loop = wall_instr - locate - load - fill.
 
 The fine split decomposes wall_instr_ms (the instrumented pass's own wall)
 rather than the clean wall_s_mean: the sub-timers are nested inside that wall,
-so the loop residual cannot go negative from cross-pass mismatch.
+so the loop residual cannot go negative from cross-pass mismatch. For the same
+reason its I/O and Decompress segments use read_wall_instr_ms and
+unzip_wall_instr_ms, the ROOT counters of that same instrumented execution;
+the coarse split keeps the clean-pass counters, matching its clean wall.
 """
 import itertools
 import math
@@ -29,7 +32,8 @@ SEG_COLORS = {
 
 
 def _seg_names(rows):
-    fine = ("locate_ms", "load_ms", "fill_ms", "wall_instr_ms")
+    fine = ("locate_ms", "load_ms", "fill_ms", "wall_instr_ms",
+            "read_wall_instr_ms", "unzip_wall_instr_ms")
     if all(k in rows[0] for k in fine):
         return ["I/O", "Decompress", "Decode", "Fill", "Locate", "Loop"]
     return ["I/O", "Decompress", "Other"]
@@ -40,11 +44,13 @@ def _segments(r, seg_names):
     fine split sums to the instrumented pass's wall (wall_instr_ms), the run the
     sub-timers were actually measured on. max(0, ...) only absorbs clock noise.
     """
-    io = float(r["read_wall_ms"])
-    unz = float(r["unzip_wall_ms"])
     if "Other" in seg_names:
+        io = float(r["read_wall_ms"])
+        unz = float(r["unzip_wall_ms"])
         wall = float(r["wall_s_mean"]) * 1000.0
         return [("I/O", io), ("Decompress", unz), ("Other", max(0.0, wall - io - unz))]
+    io = float(r["read_wall_instr_ms"])
+    unz = float(r["unzip_wall_instr_ms"])
     wall_instr = float(r["wall_instr_ms"])
     load = float(r["load_ms"])
     locate = float(r["locate_ms"])

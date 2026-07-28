@@ -7,9 +7,9 @@ from .expand import datasets, write_opts
 from .naming import root_file_for
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
-GEN_DIR = REPO / "configs" / "generation" / "study"
-WRITE_DIR = REPO / "configs" / "writing" / "study"
-BENCH_DIR = REPO / "configs" / "benchmarks" / "study"
+GEN_DIR = REPO / "configs" / "generation" / "auto-generated"
+WRITE_DIR = REPO / "configs" / "writing" / "auto-generated"
+BENCH_DIR = REPO / "configs" / "benchmarks" / "auto-generated"
 
 
 def write_json(path: pathlib.Path, obj) -> None:
@@ -114,9 +114,9 @@ def list_combos(axes, tier_filter) -> int:
                         [
                             ds_id,
                             w_id,
-                            f"configs/generation/study/{ds_id}.json",
-                            f"configs/writing/study/{ds_id}__{w_id}.json",
-                            f"configs/benchmarks/study/{ds_id}__{w_id}.json",
+                            f"configs/generation/auto-generated/{ds_id}.json",
+                            f"configs/writing/auto-generated/{ds_id}__{w_id}.json",
+                            f"configs/benchmarks/auto-generated/{ds_id}__{w_id}.json",
                             f"{gen_root}/{ds_id}",
                             f"{write_root}/{ds_id}/{w_id}",
                         ]

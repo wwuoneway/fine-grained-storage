@@ -21,8 +21,13 @@ else
   echo "missing $REPO/.env -- copy .env.example to .env and set the paths" >&2
   exit 1
 fi
-: "${SPACK_SETUP:?set SPACK_SETUP in .env}"
-: "${SPACK_ENV:?set SPACK_ENV in .env}"
+: "${FGS_SPACK_SETUP:?set FGS_SPACK_SETUP in .env}"
+: "${FGS_SPACK_ENV:?set FGS_SPACK_ENV in .env}"
+
+# Which study matrix to run. Defaults to axes.json; pass a variant as $1
+# (e.g. configs/study/axes-1-event.json) to drive the whole pipeline from it.
+AXES="${1:-configs/study/axes.json}"
+[[ -f "$AXES" ]] || { echo "axes file not found: $AXES" >&2; exit 1; }
 
 BUILD="$REPO/build"
 GEN_EXE="$BUILD/generation/fgs_generate"
@@ -33,19 +38,16 @@ for exe in "$GEN_EXE" "$WRITE_EXE" "$READ_EXE"; do
   [[ -x "$exe" ]] || { echo "missing executable: $exe -- build first" >&2; exit 1; }
 done
 
-# exit 0 = manifest matches config = safe to skip this stage.
+# exit 0 = manifest matches config = safe to skip this stage. The manifest
+# stores the full generation config, so compare the whole block: any field
+# (num_events, seed, particles, position, momentum, ...) that differs forces a
+# regen. A field-by-field list here would silently skip position/momentum edits.
 gen_matches() {  # $1 gen manifest.json   $2 generation config.json
   python3 - "$1" "$2" <<'PY'
 import json, sys
 man = json.load(open(sys.argv[1])).get("config", {})
 cfg = json.load(open(sys.argv[2]))
-ok = (
-    man.get("num_events") == cfg["num_events"]
-    and man.get("seed") == cfg["seed"]
-    and man.get("particles", {}).get("min") == cfg["particles"]["min"]
-    and man.get("particles", {}).get("max") == cfg["particles"]["max"]
-)
-sys.exit(0 if ok else 1)
+sys.exit(0 if man == cfg else 1)
 PY
 }
 
@@ -66,9 +68,9 @@ PY
 }
 
 mapfile -t TIERS < <(
-  /usr/bin/python3 -c "import json; [print(t) for t in json.load(open('configs/study/axes.json'))['tiers']]"
+  /usr/bin/python3 -c "import json,sys; [print(t) for t in json.load(open(sys.argv[1]))['tiers']]" "$AXES"
 )
-[[ ${#TIERS[@]} -gt 0 ]] || { echo "no tiers in configs/study/axes.json" >&2; exit 1; }
+[[ ${#TIERS[@]} -gt 0 ]] || { echo "no tiers in $AXES" >&2; exit 1; }
 
 # Marker mtime pins "now"; find -newer later grabs only this run's dirs.
 marker="$(mktemp)"
@@ -77,32 +79,40 @@ trap 'rm -f "$marker"' EXIT
 echo "=== phase 1: benchmarks -- tiers: ${TIERS[*]} ==="
 (
   # shellcheck disable=SC1090
-  source "$SPACK_SETUP"
-  spack env activate "$SPACK_ENV"
+  source "$FGS_SPACK_SETUP"
+  spack env activate "$FGS_SPACK_ENV"
 
   # Regenerate the study configs from axes.json so they can never be stale
   # (they are gitignored / not tracked).
-  python3 scripts/gen_study_configs.py >/dev/null
+  python3 scripts/gen_study_configs.py --axes "$AXES" >/dev/null
 
   for tier in "${TIERS[@]}"; do
-    combos="$(python3 scripts/gen_study_configs.py --list "$tier")"
+    combos="$(python3 scripts/gen_study_configs.py --axes "$AXES" --list "$tier")"
     [[ -n "$combos" ]] || { echo "no combos for tier '$tier'" >&2; exit 1; }
 
     while IFS=$'\t' read -r ds w gen_cfg write_cfg bench_cfg gen_out write_out; do
       [[ -n "$ds" ]] || continue
       echo "--- $tier: $ds / $w ---"
 
+      gen_changed=0
       if [[ -f "$gen_out/manifest.json" ]] && gen_matches "$gen_out/manifest.json" "$gen_cfg"; then
         echo "SKIP   gen    $ds"
       else
         echo "BUILD  gen    $ds"
+        rm -rf "$gen_out"
         "$GEN_EXE" "$gen_cfg"
+        gen_changed=1
       fi
 
-      if [[ -f "$write_out/manifest.json" ]] && write_matches "$write_out/manifest.json" "$write_cfg"; then
+      # A regen invalidates any .root written from the old inputs, so force the
+      # write step whenever gen changed, even if its own config still matches.
+      if [[ $gen_changed -eq 0 ]] \
+         && [[ -f "$write_out/manifest.json" ]] \
+         && write_matches "$write_out/manifest.json" "$write_cfg"; then
         echo "SKIP   write  $ds/$w"
       else
         echo "BUILD  write  $ds/$w"
+        rm -rf "$write_out"
         "$WRITE_EXE" "$write_cfg"
       fi
 

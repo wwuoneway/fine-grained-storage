@@ -43,8 +43,13 @@ writing/fgs_verify, benchmarks/read/fgs_read_bench}`.
 runs, edit `axes.json`; `scripts/run_study_all.sh` regenerates the per-stage
 configs from it (via `scripts/gen_study_configs.py`) and drives every stage.
 
+Only `axes-example.json` is tracked; `axes.json` itself is machine-local and
+gitignored, like `.env` vs `.env.example`. Before the first run, copy the
+example to `configs/study/axes.json` and adjust its tiers and sizes for the
+machine.
+
 ```bash
-scripts/run_study_all.sh          # needs .env
+scripts/run_study_all.sh          # needs .env and configs/study/axes.json
 ```
 
 It benchmarks every tier with Spack on, then plots every run with Spack off,

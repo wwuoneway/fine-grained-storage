@@ -34,7 +34,13 @@ int main(int argc, char** argv)
     summary_csv << fgs::bench::summary_header();
     fgs::bench::write_run_info(run_dir / "run_info.json", config_path, config);
 
+    int total_enabled = 0;
+    for (auto const& item : config.at("benchmarks"))
+      if (item.value("enabled", true))
+        ++total_enabled;
+
     int index = 0;
+    int done = 0;
     int failures = 0;
     for (auto const& item : config.at("benchmarks")) {
       ++index;
@@ -43,6 +49,9 @@ int main(int argc, char** argv)
         bench.benchmark_num = index; // default to config order when unset
       if (!bench.enabled)
         continue;
+      ++done;
+      std::cout << "\nrunning benchmark " << done << "/" << total_enabled << ": " << bench.name
+                << "\n";
       try {
         fgs::bench::run_read_benchmark(bench, run_dir, summary_csv);
       } catch (std::exception const& e) {

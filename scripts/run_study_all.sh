@@ -86,13 +86,26 @@ echo "=== phase 1: benchmarks -- tiers: ${TIERS[*]} ==="
   # (they are gitignored / not tracked).
   python3 scripts/gen_study_configs.py --axes "$AXES" >/dev/null
 
+  # Precompute every tier's combos up front so we know the total run count
+  # before starting; the counter below is what keeps a long run legible.
+  declare -A tier_combos
+  total=0
   for tier in "${TIERS[@]}"; do
     combos="$(python3 scripts/gen_study_configs.py --axes "$AXES" --list "$tier")"
     [[ -n "$combos" ]] || { echo "no combos for tier '$tier'" >&2; exit 1; }
+    tier_combos["$tier"]="$combos"
+    total=$(( total + $(wc -l <<< "$combos") ))
+  done
+  echo "--- $total benchmark(s) to run ---"
+
+  done_count=0
+  for tier in "${TIERS[@]}"; do
+    combos="${tier_combos[$tier]}"
 
     while IFS=$'\t' read -r ds w gen_cfg write_cfg bench_cfg gen_out write_out; do
       [[ -n "$ds" ]] || continue
-      echo "--- $tier: $ds / $w ---"
+      done_count=$(( done_count + 1 ))
+      echo "--- [$done_count/$total] $tier: $ds / $w ---"
 
       gen_changed=0
       if [[ -f "$gen_out/manifest.json" ]] && gen_matches "$gen_out/manifest.json" "$gen_cfg"; then

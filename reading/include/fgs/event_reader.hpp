@@ -72,6 +72,16 @@ namespace fgs {
     void print_metrics() const;
     void print_metrics(std::ostream& os) const;
 
+    // A container's shape on disk: cluster count and total on-disk page count
+    // across all its physical columns. Fixed regardless of how it's later read.
+    struct ContainerFacts {
+      std::uint64_t clusters = 0;
+      std::uint64_t pages = 0;
+    };
+
+    // One entry per open container, keyed by container name.
+    std::map<std::string, ContainerFacts> dataset_facts() const;
+
   private:
     // One opened product container and the entry pointer bound to its vector
     // field. Exactly one of pos/mom is set, per the field's element type.

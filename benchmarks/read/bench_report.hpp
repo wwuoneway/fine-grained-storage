@@ -8,12 +8,19 @@
 #include <filesystem>
 #include <iosfwd>
 #include <limits>
+#include <map>
 #include <string>
 #include <vector>
 
 #include <nlohmann/json_fwd.hpp>
 
 namespace fgs::bench {
+
+  // Mirrors fgs::EventReader::ContainerFacts without depending on event_reader.hpp.
+  struct ContainerFacts {
+    std::uint64_t clusters = 0;
+    std::uint64_t pages = 0;
+  };
 
   // The handful of ROOT RNTuple performance counters worth carrying into the CSV,
   // summed across the event's products (position + momentum). These attribute read
@@ -24,6 +31,9 @@ namespace fgs::bench {
     double read_payload_mb = 0.0; // szReadPayload: bytes pulled from storage
     std::uint64_t n_read = 0;     // nRead: number of byte-range reads (seeks)
     double read_efficiency = std::numeric_limits<double>::quiet_NaN(); // payload / (payload + overhead)
+    std::uint64_t n_page_read = 0;      // nPageRead: sealed pages fetched from storage
+    std::uint64_t n_page_unsealed = 0;  // nPageUnsealed: pages actually decompressed
+    std::uint64_t n_cluster_loaded = 0; // nClusterLoaded: clusters fetched from storage
   };
 
   // Parse ROOT's pipe-delimited kMetrics dump (as captured by EventReader::
@@ -97,8 +107,10 @@ namespace fgs::bench {
                           BenchmarkId const& id,
                           std::vector<Measurement> const& reps);
 
-  // Human-readable per-benchmark files.
-  void write_benchmark_metadata(std::filesystem::path const& path, BenchmarkId const& id);
+  // Human-readable per-benchmark files. `dataset_facts` is keyed by container
+  // name; empty when not available (e.g. facts weren't collected).
+  void write_benchmark_metadata(std::filesystem::path const& path, BenchmarkId const& id,
+                                std::map<std::string, ContainerFacts> const& dataset_facts = {});
   void write_benchmark_summary_txt(std::filesystem::path const& path,
                                    BenchmarkId const& id,
                                    std::vector<Measurement> const& reps);

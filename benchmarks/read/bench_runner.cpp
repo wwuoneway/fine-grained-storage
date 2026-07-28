@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -135,10 +136,13 @@ namespace fgs::bench {
     fs::path root_path = bench.root_file;
     std::vector<fs::path> container_paths{root_path};
 
+    std::map<std::string, fgs::bench::ContainerFacts> dataset_facts;
     std::uint64_t const n_events = [&] {
       ROOT::RNTupleReadOptions probe_opts;
       probe_opts.SetClusterCache(ROOT::RNTupleReadOptions::EClusterCache::kOff);
       fgs::EventReader probe(root_path, index_name, probe_opts);
+      for (auto const& [name, facts] : probe.dataset_facts())
+        dataset_facts[name] = {facts.clusters, facts.pages};
       return std::min(bench.num_events, probe.num_events());
     }();
 
@@ -160,7 +164,7 @@ namespace fgs::bench {
                                bench.repetitions,
                                bench.root_file.string(),
                                bench.manifest_file.string()};
-    fgs::bench::write_benchmark_metadata(bench_dir / "metadata.txt", id);
+    fgs::bench::write_benchmark_metadata(bench_dir / "metadata.txt", id, dataset_facts);
 
     std::ofstream log(bench_dir / "benchmark.log");
     print_benchmark_header(log, bench, root_path, n_events);

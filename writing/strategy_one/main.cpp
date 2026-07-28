@@ -20,12 +20,14 @@
 #include <ROOT/RNTupleWriter.hxx>
 #include <TFile.h>
 #include <TTree.h>
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <string>
@@ -114,6 +116,8 @@ namespace {
   void write_manifest(fs::path const& path,
                       std::uint64_t num_events,
                       std::uint64_t total_particles,
+                      std::uint64_t min_particles,
+                      std::uint64_t max_particles,
                       std::vector<VariantResult> const& variants,
                       std::uint64_t shuffle_seed)
   {
@@ -141,6 +145,20 @@ namespace {
     manifest["avg_event_size_mb"] =
       num_events ? fgs::round3(mean_file_bytes / static_cast<double>(num_events) / kBytesPerMiB) : 0.0;
     manifest["total_particles"] = total_particles;
+    manifest["particles_per_event_min"] = min_particles;
+    manifest["particles_per_event_max"] = max_particles;
+
+    // Raw generated payload per event (both products, uncompressed) -- what the
+    // tier's particle count was actually sized to hit, as opposed to
+    // avg_event_size_mb above, which is the on-disk, compressed footprint.
+    double const bytes_per_particle =
+      static_cast<double>(sizeof(products) / sizeof(products[0])) * static_cast<double>(kComponents) *
+      sizeof(float);
+    manifest["avg_raw_payload_mb"] =
+      num_events
+        ? fgs::round3(static_cast<double>(total_particles) / static_cast<double>(num_events) *
+                       bytes_per_particle / 1.0e6)
+        : 0.0;
 
     manifest["variants"] = json::array();
     for (VariantResult const& v : variants) {
@@ -281,8 +299,16 @@ int main(int argc, char** argv)
 
     std::uint64_t num_events = positions.size();
     std::uint64_t total_particles = 0;
-    for (auto const& pf : positions)
-      total_particles += pf.size() / kComponents;
+    std::uint64_t min_particles = std::numeric_limits<std::uint64_t>::max();
+    std::uint64_t max_particles = 0;
+    for (auto const& pf : positions) {
+      std::uint64_t const n = pf.size() / kComponents;
+      total_particles += n;
+      min_particles = std::min(min_particles, n);
+      max_particles = std::max(max_particles, n);
+    }
+    if (positions.empty())
+      min_particles = 0;
     std::cout << "loaded " << num_events << " events, " << total_particles << " particles\n";
 
     std::vector<VariantResult> results;
@@ -318,8 +344,8 @@ int main(int argc, char** argv)
 
     // One manifest for the whole strategy (product registry + variant list).
     fs::create_directories(cfg.output_root);
-    write_manifest(
-      cfg.output_root / "manifest.json", num_events, total_particles, results, cfg.shuffle_seed);
+    write_manifest(cfg.output_root / "manifest.json", num_events, total_particles, min_particles,
+                  max_particles, results, cfg.shuffle_seed);
 
     return 0;
   } catch (std::exception const& e) {

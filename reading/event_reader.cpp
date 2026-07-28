@@ -152,6 +152,26 @@ namespace fgs {
     return out;
   }
 
+  std::map<std::string, EventReader::ContainerFacts> EventReader::dataset_facts() const
+  {
+    std::map<std::string, ContainerFacts> out;
+    for (auto const& [name, c] : containers_) {
+      ContainerFacts facts;
+      auto const& desc = c.reader->GetDescriptor();
+      facts.clusters = desc.GetNClusters();
+      for (auto const& cluster : desc.GetClusterIterable()) {
+        for (auto const& col : desc.GetColumnIterable()) {
+          ROOT::DescriptorId_t const colId = col.GetPhysicalId();
+          if (!cluster.ContainsColumn(colId))
+            continue;
+          facts.pages += cluster.GetPageRange(colId).GetPageInfos().size();
+        }
+      }
+      out.emplace(name, facts);
+    }
+    return out;
+  }
+
   void EventReader::print_metrics() const { print_metrics(std::cout); }
 
   void EventReader::print_metrics(std::ostream& os) const

@@ -106,6 +106,7 @@ namespace fgs::bench {
       double thr_mean = 0.0;
       double read_ms_mean = 0.0, unzip_ms_mean = 0.0, payload_mb_mean = 0.0;
       double n_read_mean = 0.0, read_eff_mean = 0.0;
+      double n_page_read_mean = 0.0, n_page_unsealed_mean = 0.0, n_cluster_loaded_mean = 0.0;
       double locate_ms_mean = 0.0, load_ms_mean = 0.0, fill_ms_mean = 0.0;
       double wall_instr_ms_mean = 0.0;
       double read_wall_instr_ms_mean = 0.0, unzip_wall_instr_ms_mean = 0.0;
@@ -116,6 +117,7 @@ namespace fgs::bench {
       std::vector<double> wall, latency;
       double read_ms_sum = 0.0, unzip_ms_sum = 0.0, payload_sum = 0.0;
       double n_read_sum = 0.0, read_eff_sum = 0.0;
+      double n_page_read_sum = 0.0, n_page_unsealed_sum = 0.0, n_cluster_loaded_sum = 0.0;
       double locate_sum = 0.0, load_sum = 0.0, fill_sum = 0.0;
       double wall_instr_sum = 0.0;
       double read_instr_sum = 0.0, unzip_instr_sum = 0.0;
@@ -127,6 +129,9 @@ namespace fgs::bench {
         payload_sum += m.counters.read_payload_mb;
         n_read_sum += static_cast<double>(m.counters.n_read);
         read_eff_sum += m.counters.read_efficiency;
+        n_page_read_sum += static_cast<double>(m.counters.n_page_read);
+        n_page_unsealed_sum += static_cast<double>(m.counters.n_page_unsealed);
+        n_cluster_loaded_sum += static_cast<double>(m.counters.n_cluster_loaded);
         locate_sum += m.locate_ms;
         load_sum += m.load_ms;
         fill_sum += m.fill_ms;
@@ -151,6 +156,9 @@ namespace fgs::bench {
               payload_sum / n,
               n_read_sum / n,
               read_eff_sum / n,
+              n_page_read_sum / n,
+              n_page_unsealed_sum / n,
+              n_cluster_loaded_sum / n,
               locate_sum / n,
               load_sum / n,
               fill_sum / n,
@@ -166,6 +174,7 @@ namespace fgs::bench {
     // Sum the raw volumes/times across every product section, then derive ratios.
     double payload_b = 0.0, overhead_b = 0.0, wall_read_ns = 0.0, wall_unzip_ns = 0.0;
     std::uint64_t n_read = 0;
+    std::uint64_t n_page_read = 0, n_page_unsealed = 0, n_cluster_loaded = 0;
 
     std::istringstream in(raw_dump);
     std::string line;
@@ -202,6 +211,12 @@ namespace fgs::bench {
         wall_unzip_ns += value;
       else if (name == "nRead")
         n_read += static_cast<std::uint64_t>(value);
+      else if (name == "nPageRead")
+        n_page_read += static_cast<std::uint64_t>(value);
+      else if (name == "nPageUnsealed")
+        n_page_unsealed += static_cast<std::uint64_t>(value);
+      else if (name == "nClusterLoaded")
+        n_cluster_loaded += static_cast<std::uint64_t>(value);
     }
 
     ReadCounters c;
@@ -209,6 +224,9 @@ namespace fgs::bench {
     c.unzip_wall_ms = wall_unzip_ns / 1e6;
     c.read_payload_mb = payload_b / 1e6;
     c.n_read = n_read;
+    c.n_page_read = n_page_read;
+    c.n_page_unsealed = n_page_unsealed;
+    c.n_cluster_loaded = n_cluster_loaded;
     double const total = payload_b + overhead_b;
     if (total > 0.0)
       c.read_efficiency = payload_b / total;
@@ -295,6 +313,7 @@ namespace fgs::bench {
            "num_events,reps,wall_s_mean,wall_s_min,latency_us_mean,latency_us_min,"
            "throughput_evt_s_mean,"
            "read_wall_ms,unzip_wall_ms,read_payload_mb,n_read,read_efficiency,"
+           "n_page_read,n_page_unsealed,n_cluster_loaded,"
            "locate_ms,load_ms,fill_ms,wall_instr_ms,read_wall_instr_ms,unzip_wall_instr_ms\n";
   }
 
@@ -309,6 +328,7 @@ namespace fgs::bench {
     csv << "benchmark_num,benchmark,variant,access_pattern,cache_state,cluster_cache,implicit_mt,"
            "num_events,repetition,wall_s,latency_us_per_event,throughput_evt_s,total_values,"
            "read_wall_ms,unzip_wall_ms,read_payload_mb,n_read,read_efficiency,"
+           "n_page_read,n_page_unsealed,n_cluster_loaded,"
            "locate_ms,load_ms,fill_ms,wall_instr_ms,read_wall_instr_ms,unzip_wall_instr_ms\n";
     for (Measurement const& m : reps)
       csv << id.num << ',' << csv_field(id.name) << ',' << csv_field(id.variant) << ','
@@ -319,6 +339,8 @@ namespace fgs::bench {
           << m.counters.read_wall_ms << ',' << m.counters.unzip_wall_ms << ','
           << m.counters.read_payload_mb << ',' << m.counters.n_read << ','
           << m.counters.read_efficiency << ','
+          << m.counters.n_page_read << ',' << m.counters.n_page_unsealed << ','
+          << m.counters.n_cluster_loaded << ','
           << m.locate_ms << ',' << m.load_ms << ',' << m.fill_ms << ',' << m.wall_instr_ms << ','
           << m.read_wall_instr_ms << ',' << m.unzip_wall_instr_ms << '\n';
   }
@@ -335,12 +357,14 @@ namespace fgs::bench {
         << a.lat_min << ',' << a.thr_mean << ','
         << a.read_ms_mean << ',' << a.unzip_ms_mean << ',' << a.payload_mb_mean << ','
         << a.n_read_mean << ',' << a.read_eff_mean << ','
+        << a.n_page_read_mean << ',' << a.n_page_unsealed_mean << ',' << a.n_cluster_loaded_mean << ','
         << a.locate_ms_mean << ',' << a.load_ms_mean << ',' << a.fill_ms_mean << ','
         << a.wall_instr_ms_mean << ',' << a.read_wall_instr_ms_mean << ','
         << a.unzip_wall_instr_ms_mean << '\n';
   }
 
-  void write_benchmark_metadata(fs::path const& path, BenchmarkId const& id)
+  void write_benchmark_metadata(fs::path const& path, BenchmarkId const& id,
+                                std::map<std::string, ContainerFacts> const& dataset_facts)
   {
     std::ofstream out(path);
     if (!out)
@@ -356,6 +380,12 @@ namespace fgs::bench {
         << "repetitions    : " << id.repetitions << '\n'
         << "root_file      : " << id.root_file << '\n'
         << "manifest_file  : " << id.manifest_file << '\n';
+
+    if (!dataset_facts.empty()) {
+      out << "dataset_facts  :\n";
+      for (auto const& [name, facts] : dataset_facts)
+        out << "  " << name << " : clusters=" << facts.clusters << " pages=" << facts.pages << '\n';
+    }
   }
 
   void write_benchmark_summary_txt(fs::path const& path,
@@ -477,7 +507,10 @@ namespace fgs::bench {
         << "unzip_wall_ms        : " << m.counters.unzip_wall_ms << '\n'
         << "read_payload_mb      : " << m.counters.read_payload_mb << '\n'
         << "n_read               : " << m.counters.n_read << '\n'
-        << "read_efficiency      : " << m.counters.read_efficiency << "\n\n";
+        << "read_efficiency      : " << m.counters.read_efficiency << '\n'
+        << "n_page_read          : " << m.counters.n_page_read << '\n'
+        << "n_page_unsealed      : " << m.counters.n_page_unsealed << '\n'
+        << "n_cluster_loaded     : " << m.counters.n_cluster_loaded << "\n\n";
 
     std::string const table = format_metrics_table(metrics_raw);
     if (table.empty())

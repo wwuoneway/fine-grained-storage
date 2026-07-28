@@ -50,7 +50,14 @@ namespace fgs {
     }
     index->ResetBranchAddresses();
 
-    num_events_ = static_cast<std::uint64_t>(n);
+    // Count distinct events, not index entries, and demand a dense id range so a
+    // mismatch fails here rather than as "event not found" mid-benchmark.
+    num_events_ = static_cast<std::uint64_t>(index_.size());
+    for (std::uint64_t id = 0; id < num_events_; ++id)
+      if (index_.find(id) == index_.end())
+        throw std::runtime_error("EventReader: index in " + root_file_.string() + " has " +
+                                 std::to_string(num_events_) + " distinct events but event id " +
+                                 std::to_string(id) + " is missing (ids must cover [0, N))");
     product_names_.assign(products.begin(), products.end());
 
     // Open every container up front so read_product pays no open cost inside the

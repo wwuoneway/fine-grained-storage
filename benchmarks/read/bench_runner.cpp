@@ -193,8 +193,6 @@ namespace fgs::bench {
       m.load_ms = instr.load_ms;
       m.fill_ms = instr.fill_ms;
       m.wall_instr_ms = instr.wall_s * 1000.0;
-      // Keep the instrumented pass's own ROOT counters: decode = load - read -
-      // unzip only holds when all three come from the same execution.
       ReadCounters const instr_counters = fgs::bench::parse_read_counters(instr_metrics_raw);
       m.read_wall_instr_ms = instr_counters.read_wall_ms;
       m.unzip_wall_instr_ms = instr_counters.unzip_wall_ms;

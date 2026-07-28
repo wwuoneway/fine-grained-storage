@@ -106,6 +106,10 @@ namespace fgs::bench {
     if (bench.cache_state == CacheState::Warm && bench.evict_method != "none")
       throw std::runtime_error("benchmark \"" + bench.name +
                                "\" only supports warm evict_method=none for now");
+    if (bench.cache_state == CacheState::Warm && !bench.warmup)
+      throw std::runtime_error("benchmark \"" + bench.name +
+                               "\" has cache_state=warm with warmup=false: warm requires warmup; "
+                               "ambient cache state is not a defined condition");
 
     return bench;
   }

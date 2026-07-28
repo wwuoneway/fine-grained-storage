@@ -1,6 +1,7 @@
 #include "access_order.hpp"
 
 #include <algorithm>
+#include <iostream>
 #include <numeric>
 #include <random>
 #include <stdexcept>
@@ -72,8 +73,12 @@ namespace fgs::bench {
   {
     if (pattern == "sequential")
       return std::make_unique<SequentialOrder>();
-    if (pattern == "random")
+    if (pattern == "random") {
+      if (n < 2)
+        std::cerr << "warning: access_pattern=random with num_events=" << n
+                  << " is trivially sequential\n";
       return std::make_unique<RandomOrder>(n, seed);
+    }
     if (pattern == "strided") {
       if (stride == 0)
         throw std::runtime_error("strided access_pattern requires stride > 0");

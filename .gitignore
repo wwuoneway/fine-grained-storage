@@ -54,14 +54,16 @@ output/
 .agents/
 .codex/
 
-# Study configs are regenerated from configs/study/axes.json by
-# scripts/gen_study_configs.py on each run; only the axes files are tracked.
-configs/generation/study/
-configs/writing/study/
-configs/benchmarks/study/
+# Study configs are regenerated from an axes file by scripts/studygen on each
+# run; none of them are tracked.
 configs/generation/auto-generated/
 configs/writing/auto-generated/
 configs/benchmarks/auto-generated/
+
+# axes.json (and any axes-*.json variant) is a local, machine-tuned study
+# matrix, same idea as .env vs .env.example. Only the template is tracked.
+configs/study/*.json
+!configs/study/axes-example.json
 
 # CMake build trees (also covered by build/ above, listed here for clarity).
 build/

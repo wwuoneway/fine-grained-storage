@@ -1,5 +1,5 @@
 {
-  "_comment": "Same matrix as axes-5000.json but reading num_events raised to 10000. Dataset (s20k_p2-10) and writing output are shared -- no regeneration needed.",
+  "_comment": "Template for configs/study/axes.json, the study matrix scripts/studygen reads by default. axes.json is local and gitignored (tune it per machine, same as .env vs .env.example); copy this file to axes.json and edit the values for your run.",
   "output_roots": {
     "generation": "output/generation/study",
     "writing": "output/writing/study"
@@ -32,9 +32,9 @@
         "access_seed": 1234,
         "cache": ["cold", "warm"],
         "cluster_cache": ["off", "on"],
-        "implicit_mt": ["off", "default"],
+        "implicit_mt": ["off"],
         "num_events": 10000,
-        "repetitions": 5
+        "repetitions": 4
       }
     }
   }

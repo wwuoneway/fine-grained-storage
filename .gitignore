@@ -59,6 +59,9 @@ output/
 configs/generation/study/
 configs/writing/study/
 configs/benchmarks/study/
+configs/generation/auto-generated/
+configs/writing/auto-generated/
+configs/benchmarks/auto-generated/
 
 # CMake build trees (also covered by build/ above, listed here for clarity).
 build/

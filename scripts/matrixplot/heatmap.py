@@ -8,9 +8,7 @@ from .data import DIRECTION, distinct, fmt
 from .pivot import pivot, write_pivot_csv
 
 
-def draw_panel(ax, grid, metric, row_vals, col_vals, cmap, title):
-    flat = [x for row in grid for x in row if not math.isnan(x)]
-    vmin, vmax = (min(flat), max(flat)) if flat else (0.0, 1.0)
+def draw_panel(ax, grid, metric, row_vals, col_vals, cmap, title, vmin, vmax):
     im = ax.imshow(grid, aspect="auto", cmap=cmap, vmin=vmin, vmax=vmax)
     ax.set_xticks(range(len(col_vals)), col_vals, rotation=20, ha="right", fontsize=8)
     ax.set_yticks(range(len(row_vals)), row_vals, fontsize=8)
@@ -39,18 +37,27 @@ def make_metric(rows, metric, row_axis, col_axis, facet_axes, plots_dir, csv_dir
     fig, axs = plt.subplots(nrows, ncols, figsize=(4.6 * ncols, 3.6 * nrows), squeeze=False)
     fig.subplots_adjust(wspace=0.35, hspace=0.55)
 
-    last_im = None
-    for idx, combo in enumerate(combos):
+    # All grids up front so every panel shares one color scale; otherwise the
+    # single colorbar only describes the last panel. An empty facet combo
+    # (non-crossed sweep) yields an all-NaN grid.
+    grids = []
+    for combo in combos:
         sel = [r for r in rows if all(r[a] == v for a, v in zip(facet_axes, combo))]
         nes = {r["num_events"] for r in sel}
-        assert len(nes) == 1, f"num_events not constant for panel {combo}: {nes}"
+        assert len(nes) <= 1, f"num_events not constant for panel {combo}: {nes}"
 
         grid = pivot(sel, metric, row_axis, col_axis, row_vals, col_vals)
         facetkey = "_".join(f"{a}-{v}" for a, v in zip(facet_axes, combo)) or "all"
         write_pivot_csv(
             csv_dir / f"{metric}__{facetkey}.csv", grid, row_axis, col_axis, row_vals, col_vals
         )
+        grids.append(grid)
 
+    flat = [x for grid in grids for row in grid for x in row if not math.isnan(x)]
+    vmin, vmax = (min(flat), max(flat)) if flat else (0.0, 1.0)
+
+    last_im = None
+    for idx, (combo, grid) in enumerate(zip(combos, grids)):
         panel_title = "\n".join(f"{a}={v}" for a, v in zip(facet_axes, combo)) or "(all)"
         ax = axs[idx // ncols][idx % ncols]
         # Only the outer panels get axis labels, to avoid inner-panel clutter.
@@ -58,7 +65,7 @@ def make_metric(rows, metric, row_axis, col_axis, facet_axes, plots_dir, csv_dir
             ax.set_ylabel(row_axis, fontsize=8)
         if idx // ncols == nrows - 1:
             ax.set_xlabel(col_axis, fontsize=8)
-        last_im = draw_panel(ax, grid, metric, row_vals, col_vals, cmap, panel_title)
+        last_im = draw_panel(ax, grid, metric, row_vals, col_vals, cmap, panel_title, vmin, vmax)
 
     # Blank any unused grid cells.
     for idx in range(n, nrows * ncols):

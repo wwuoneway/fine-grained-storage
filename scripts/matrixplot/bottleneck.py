@@ -1,9 +1,14 @@
 """Stacked-bar wall-time bottleneck breakdown.
 
-Coarse view: I/O / Decompress / Other. When the Phase-A sub-timers are present
-(locate_ms/load_ms/fill_ms), "Other" is split into Decode / Fill / Locate / Loop
-using the nested model: load = io + unzip + decode, so decode = load - io - unzip,
-and loop = wall - locate - load - fill.
+Coarse view: I/O / Decompress / Other, decomposing the clean-pass wall. When
+the sub-timers are present (locate_ms/load_ms/fill_ms plus wall_instr_ms),
+"Other" is split into Decode / Fill / Locate / Loop using the nested model:
+load = io + unzip + decode, so decode = load - io - unzip, and
+loop = wall_instr - locate - load - fill.
+
+The fine split decomposes wall_instr_ms (the instrumented pass's own wall)
+rather than the clean wall_s_mean: the sub-timers are nested inside that wall,
+so the loop residual cannot go negative from cross-pass mismatch.
 """
 import itertools
 import math
@@ -24,24 +29,28 @@ SEG_COLORS = {
 
 
 def _seg_names(rows):
-    fine = ("locate_ms", "load_ms", "fill_ms")
+    fine = ("locate_ms", "load_ms", "fill_ms", "wall_instr_ms")
     if all(k in rows[0] for k in fine):
         return ["I/O", "Decompress", "Decode", "Fill", "Locate", "Loop"]
     return ["I/O", "Decompress", "Other"]
 
 
 def _segments(r, seg_names):
-    """One row -> [(segment, ms)], summing to wall. Residuals clamped at 0."""
-    wall = float(r["wall_s_mean"]) * 1000.0
+    """One row -> [(segment, ms)]. The coarse split sums to the clean wall; the
+    fine split sums to the instrumented pass's wall (wall_instr_ms), the run the
+    sub-timers were actually measured on. max(0, ...) only absorbs clock noise.
+    """
     io = float(r["read_wall_ms"])
     unz = float(r["unzip_wall_ms"])
     if "Other" in seg_names:
+        wall = float(r["wall_s_mean"]) * 1000.0
         return [("I/O", io), ("Decompress", unz), ("Other", max(0.0, wall - io - unz))]
+    wall_instr = float(r["wall_instr_ms"])
     load = float(r["load_ms"])
     locate = float(r["locate_ms"])
     fill = float(r["fill_ms"])
     decode = max(0.0, load - io - unz)
-    loop = max(0.0, wall - locate - load - fill)
+    loop = max(0.0, wall_instr - locate - load - fill)
     return [("I/O", io), ("Decompress", unz), ("Decode", decode),
             ("Fill", fill), ("Locate", locate), ("Loop", loop)]
 
@@ -96,8 +105,10 @@ def _bottleneck_one_variant(variant_rows, variant_name, col_axis, facet_axes,
         x = range(len(col_vals))
 
         seg_vals = {name: [] for name in seg_names}
+        has_data = []
         for cv in col_vals:
             cell = [r for r in sel if r[col_axis] == cv]
+            has_data.append(bool(cell))
             means = _cell_segments(cell, seg_names) if cell else {n_: 0.0 for n_ in seg_names}
             for name in seg_names:
                 seg_vals[name].append(means[name])
@@ -127,10 +138,14 @@ def _bottleneck_one_variant(variant_rows, variant_name, col_axis, facet_axes,
         ax.set_title("\n".join(lines) if lines else "(all)",
                      fontsize=13, linespacing=1.5, pad=26)
 
+        # "--" for columns with no rows, so absence is not shown as 0.00 ms.
         cell_text, row_colors = [], []
         for name in seg_names:
             row = []
             for j, val in enumerate(seg_vals[name]):
+                if not has_data[j]:
+                    row.append("--")
+                    continue
                 pct = val / totals[j] * 100 if totals[j] > 0 else 0
                 row.append(f"{val:.2f} ms  ({pct:.0f}%)")
             cell_text.append(row)

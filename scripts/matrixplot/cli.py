@@ -38,6 +38,11 @@ def main() -> None:
     num_events = next(iter(all_ne))
 
     if args.metric:
+        if args.metric not in rows[0]:
+            raise SystemExit(
+                f"metric \"{args.metric}\" is not a summary.csv column "
+                f"(available: {', '.join(m for m in DEFAULT_METRICS if m in rows[0])})"
+            )
         metrics = [args.metric]
     else:
         metrics = [m for m in DEFAULT_METRICS if m in rows[0]]

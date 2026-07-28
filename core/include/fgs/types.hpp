@@ -2,6 +2,9 @@
 
 // These are the ONLY data products in this benchmark: two real physics objects
 // (a 3D position and a 3D momentum) grouped per simulated collision event.
+//
+// Any type persisted to a ROOT file must also be listed in dictionary/LinkDef.h
+// so ROOT can generate its I/O reflection. Add a product here, add it there too.
 
 #include <cstdint>
 #include <vector>

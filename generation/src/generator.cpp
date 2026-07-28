@@ -9,6 +9,7 @@
 #include <nlohmann/json.hpp>
 
 #include "fgs/bin_io.hpp"
+#include "fgs/util.hpp"
 
 namespace fgs {
 
@@ -139,22 +140,25 @@ namespace fgs {
     stats.momenta_bytes = static_cast<std::uint64_t>(fs::file_size(output_dir / "momenta.bin"));
     stats.total_bytes = stats.positions_bytes + stats.momenta_bytes;
 
-    auto mb = [](std::uint64_t b) { return static_cast<double>(b) / (1024.0 * 1024.0); };
+    auto mb = [](std::uint64_t b) { return round3(static_cast<double>(b) / (1024.0 * 1024.0)); };
 
     // ordered_json preserves insertion order so the summary block appears at the
     // top of the file -- easy to scan without scrolling past config or events.
     nlohmann::ordered_json manifest;
+    manifest["generated_at"] = utc_timestamp();
     manifest["format"] = "FGS2";
     manifest["num_events"] = stats.num_events;
     manifest["total_particles"] = stats.total_particles;
-    manifest["positions_bytes"] = stats.positions_bytes;
-    manifest["positions_mb"] = mb(stats.positions_bytes);
-    manifest["momenta_bytes"] = stats.momenta_bytes;
-    manifest["momenta_mb"] = mb(stats.momenta_bytes);
+    manifest["files"] = nlohmann::ordered_json::array({
+      {{"output_file", "positions.bin"},
+       {"bytes", stats.positions_bytes},
+       {"mb", mb(stats.positions_bytes)}},
+      {{"output_file", "momenta.bin"},
+       {"bytes", stats.momenta_bytes},
+       {"mb", mb(stats.momenta_bytes)}},
+    });
     manifest["total_bytes"] = stats.total_bytes;
     manifest["total_mb"] = mb(stats.total_bytes);
-    manifest["positions_file"] = "positions.bin";
-    manifest["momenta_file"] = "momenta.bin";
     manifest["seed"] = cfg.seed;
     manifest["config"] = config_to_json(cfg);
     manifest["events"] = std::move(events_array);

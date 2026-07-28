@@ -1,13 +1,13 @@
-find_package(ROOT 6.40.02 REQUIRED COMPONENTS RIO ROOTNTuple Tree)
-
 # EventReader: read-side library, reused by the demo driver (and later the
-# benchmark loop). Links fgs_generation for fgs::Event, reconstruct_event,
-# and nlohmann/json.
+# benchmark loop). fgs_core supplies Event/Token; fgs_generation supplies
+# reconstruct_event and nlohmann/json.
 add_library(fgs_reading STATIC event_reader.cpp)
-target_include_directories(fgs_reading PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(fgs_reading PUBLIC include)
 target_compile_features(fgs_reading PUBLIC cxx_std_23)
 target_link_libraries(fgs_reading PUBLIC
+  fgs_core
   fgs_generation
+  fgs_dictionary
   ROOT::RIO
   ROOT::ROOTNTuple
   ROOT::Tree

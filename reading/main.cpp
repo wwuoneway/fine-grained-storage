@@ -7,19 +7,16 @@
 //   variant         default: no-shuffle
 //   --events a,b,c  event ids to read (default: event 0)
 //   --product NAME  product to read (e.g. position, momentum)
-//   --field NAME    a single field of --product (e.g. x, pz)
 //   --metrics       enable ROOT read metrics and print them at the end
 //
 // The read mode is chosen by which options you pass:
-//   (no --product/--field)   full event: position + momentum joined (read_event)
-//   --product P              whole-row read of product P, all columns (read_product)
-//   --product P --field F    single field F of product P, column projection (read_field)
+//   (no --product)   full event: position + momentum joined (read_event)
+//   --product P      whole-row read of product P (read_product)
 //
 // Examples:
 //   fgs_read                                            # event 0, full event
 //   fgs_read output/writing/rntuple/strategy_one shuffle --events 0,5,42
 //   fgs_read --product position --events 0,5            # whole position rows
-//   fgs_read --product momentum --field pz --events 0   # just momentum.pz
 
 #include <cstdint>
 #include <filesystem>
@@ -31,24 +28,18 @@
 
 #include <nlohmann/json.hpp>
 
-#include "event_reader.hpp"
+#include "fgs/event_reader.hpp"
 #include "fgs/bin_io.hpp"
 
 namespace fs = std::filesystem;
 
 namespace {
 
-  // Read the product registry (name + numeric index id) and the index TTree name
-  // from the writing manifest. The reader itself never touches the manifest.
-  std::vector<fgs::ProductSpec> products_from_manifest(nlohmann::json const& manifest,
-                                                       std::string& index_name)
+  // The index TTree name lives in the manifest; the reader discovers everything
+  // else (products, containers) from the index itself.
+  std::string index_name_from_manifest(nlohmann::json const& manifest)
   {
-    std::vector<fgs::ProductSpec> products;
-    for (auto const& p : manifest.at("products"))
-      products.push_back(
-        {p.at("name").get<std::string>(), p.at("product_id").get<std::uint64_t>()});
-    index_name = manifest.at("products").at(0).at("index_container").get<std::string>();
-    return products;
+    return manifest.at("products").at(0).at("index_container").get<std::string>();
   }
 
   // Join the "position" and "momentum" products for one event into an fgs::Event.
@@ -82,7 +73,6 @@ int main(int argc, char** argv)
   std::vector<std::string> positional;
   bool metrics = false;
   std::string product; // empty -> full-event mode
-  std::string field;   // set -> single-field mode (needs product)
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
     if (a == "--metrics") {
@@ -103,20 +93,9 @@ int main(int argc, char** argv)
         return 1;
       }
       product = argv[++i];
-    } else if (a == "--field") {
-      if (i + 1 >= argc) {
-        std::cerr << "fgs_read: --field requires a name\n";
-        return 1;
-      }
-      field = argv[++i];
     } else {
       positional.push_back(a);
     }
-  }
-
-  if (!field.empty() && product.empty()) {
-    std::cerr << "fgs_read: --field also needs --product (which product's field?)\n";
-    return 1;
   }
 
   fs::path strat_root = positional.size() > 0 ? fs::path{positional[0]}
@@ -132,29 +111,21 @@ int main(int argc, char** argv)
       in >> manifest;
     }
 
-    std::string index_name;
-    std::vector<fgs::ProductSpec> products = products_from_manifest(manifest, index_name);
+    std::string index_name = index_name_from_manifest(manifest);
     fs::path root_path = strat_root / variant_file(manifest, variant);
 
     ROOT::RNTupleReadOptions opts;
     opts.SetEnableMetrics(metrics);
 
-    fgs::EventReader reader(root_path, index_name, products, opts);
+    fgs::EventReader reader(root_path, index_name, opts);
     std::cout << "opened " << root_path << " (" << reader.num_events() << " events)\n";
 
     if (user_events.empty())
       user_events.push_back(0); // demo default: just the first event
 
     for (std::uint64_t id : user_events) {
-      if (!field.empty()) {
-        // single-field mode: one column of one product (column projection)
-        std::vector<float> values = reader.read_field(id, product, field);
-        std::cout << "event " << id << ": " << product << "." << field << " =";
-        for (float v : values)
-          std::cout << ' ' << v;
-        std::cout << "  (" << values.size() << " values)\n";
-      } else if (!product.empty()) {
-        // whole-row mode: every column of one product
+      if (!product.empty()) {
+        // whole-row mode: every component of one product
         std::vector<float> floats = reader.read_product(id, product);
         std::cout << "event " << id << ": " << product << " = " << floats.size() << " floats:";
         for (float v : floats)
@@ -167,8 +138,8 @@ int main(int argc, char** argv)
         for (std::size_t i = 0; i < ev.positions.size(); ++i) {
           fgs::Position const& p = ev.positions[i];
           fgs::Momentum const& m = ev.momenta[i];
-          std::cout << "  [" << i << "] pos=(" << p.x << ", " << p.y << ", " << p.z
-                    << ") mom=(" << m.px << ", " << m.py << ", " << m.pz << ")\n";
+          std::cout << "  [" << i << "] pos=(" << p.x << ", " << p.y << ", " << p.z << ") mom=("
+                    << m.px << ", " << m.py << ", " << m.pz << ")\n";
         }
       }
     }

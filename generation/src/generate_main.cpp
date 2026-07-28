@@ -30,7 +30,7 @@ int main(int argc, char** argv)
     fgs::Config const cfg = fgs::load_config(config_path);
     fgs::RunStats const stats = fgs::run_generation(cfg);
 
-    // --- stdout summary ------------------------------------------------------
+    // stdout summary
     double const avg_particles = stats.num_events ? static_cast<double>(stats.total_particles) /
                                                       static_cast<double>(stats.num_events)
                                                   : 0.0;

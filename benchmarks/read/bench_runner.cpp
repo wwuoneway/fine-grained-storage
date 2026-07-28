@@ -16,7 +16,7 @@
 #include "access_order.hpp"
 #include "bench_config.hpp"
 #include "bench_report.hpp"
-#include "event_reader.hpp"
+#include "fgs/event_reader.hpp"
 #include "os_cache.hpp"
 
 namespace fs = std::filesystem;
@@ -25,15 +25,9 @@ namespace fgs::bench {
 
   namespace {
 
-    std::vector<fgs::ProductSpec> products_from_manifest(nlohmann::json const& manifest,
-                                                         std::string& index_name)
+    std::string index_name_from_manifest(nlohmann::json const& manifest)
     {
-      std::vector<fgs::ProductSpec> products;
-      for (auto const& p : manifest.at("products"))
-        products.push_back(
-          {p.at("name").get<std::string>(), p.at("product_id").get<std::uint64_t>()});
-      index_name = manifest.at("products").at(0).at("index_container").get<std::string>();
-      return products;
+      return manifest.at("products").at(0).at("index_container").get<std::string>();
     }
 
     // Write the same text to stdout and to the run.txt log, so there is always a
@@ -65,14 +59,13 @@ namespace fgs::bench {
     Measurement read_once(BenchmarkCase const& bench,
                           fs::path const& root_path,
                           std::string const& index_name,
-                          std::vector<fgs::ProductSpec> const& products,
                           std::uint64_t n_events,
                           std::uint64_t repetition,
                           std::string& metrics_raw,
                           bool instrument = false)
     {
       ROOT::RNTupleReadOptions opts = make_read_options(bench);
-      fgs::EventReader reader(root_path, index_name, products, opts);
+      fgs::EventReader reader(root_path, index_name, opts);
       reader.set_instrument(instrument);
 
       Measurement m;
@@ -90,12 +83,13 @@ namespace fgs::bench {
       std::uint64_t total_values = 0;
 
       // Visit n_events events in the pattern's order (order->next() yields each id
-      // in [0, n_events) exactly once).
+      // in [0, n_events) exactly once), reading every product the file holds.
+      std::vector<std::string> const& products = reader.product_names();
       auto const start = std::chrono::steady_clock::now();
       for (std::uint64_t i = 0; i < n_events; ++i) {
         std::uint64_t const event_id = order->next();
-        for (fgs::ProductSpec const& product : products) {
-          std::vector<float> values = reader.read_product(event_id, product.name);
+        for (std::string const& product : products) {
+          std::vector<float> values = reader.read_product(event_id, product);
           total_values += values.size();
         }
       }
@@ -124,11 +118,10 @@ namespace fgs::bench {
     void warm_cache(BenchmarkCase const& bench,
                     fs::path const& root_path,
                     std::string const& index_name,
-                    std::vector<fgs::ProductSpec> const& products,
                     std::uint64_t n_events)
     {
       std::string discard;
-      (void)read_once(bench, root_path, index_name, products, n_events, 0, discard);
+      (void)read_once(bench, root_path, index_name, n_events, 0, discard);
     }
 
   }
@@ -138,15 +131,14 @@ namespace fgs::bench {
                           std::ostream& summary_csv)
   {
     nlohmann::json manifest = load_json(bench.manifest_file);
-    std::string index_name;
-    std::vector<fgs::ProductSpec> products = products_from_manifest(manifest, index_name);
+    std::string index_name = index_name_from_manifest(manifest);
     fs::path root_path = bench.root_file;
     std::vector<fs::path> container_paths{root_path};
 
     std::uint64_t const n_events = [&] {
       ROOT::RNTupleReadOptions probe_opts;
       probe_opts.SetClusterCache(ROOT::RNTupleReadOptions::EClusterCache::kOff);
-      fgs::EventReader probe(root_path, index_name, products, probe_opts);
+      fgs::EventReader probe(root_path, index_name, probe_opts);
       return std::min(bench.num_events, probe.num_events());
     }();
 
@@ -180,12 +172,12 @@ namespace fgs::bench {
         for (fs::path const& path : container_paths)
           evict_from_cache(path);
       } else if (bench.warmup) {
-        warm_cache(bench, root_path, index_name, products, n_events);
+        warm_cache(bench, root_path, index_name, n_events);
       }
 
       std::string const started = fgs::bench::timestamp_human();
       std::string metrics_raw;
-      Measurement m = read_once(bench, root_path, index_name, products, n_events, rep, metrics_raw);
+      Measurement m = read_once(bench, root_path, index_name, n_events, rep, metrics_raw);
       m.counters = fgs::bench::parse_read_counters(metrics_raw);
 
       // Sub-timers come from a second pass so the in-loop clocks stay out of the
@@ -195,8 +187,7 @@ namespace fgs::bench {
         for (fs::path const& path : container_paths)
           evict_from_cache(path);
       std::string discard;
-      Measurement instr =
-        read_once(bench, root_path, index_name, products, n_events, rep, discard, true);
+      Measurement instr = read_once(bench, root_path, index_name, n_events, rep, discard, true);
       m.locate_ms = instr.locate_ms;
       m.load_ms = instr.load_ms;
       m.fill_ms = instr.fill_ms;

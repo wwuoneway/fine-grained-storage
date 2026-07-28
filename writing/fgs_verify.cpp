@@ -9,12 +9,14 @@
 //   gen_dir               default: output/generation
 
 #include <ROOT/RNTupleReader.hxx>
+#include <ROOT/RNTupleView.hxx>
 #include <TFile.h>
 #include <TTree.h>
 #include <cstdint>
 #include <cstdlib>
-#include <fgs/bin_io.hpp>
-#include <fgs/types.hpp>
+#include "fgs/bin_io.hpp"
+#include "fgs/token.hpp"
+#include "fgs/types.hpp"
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -23,6 +25,7 @@
 #include <numeric>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace fs = std::filesystem;
@@ -36,27 +39,47 @@ namespace {
     }
   }
 
-  // The numeric minor key for a product, read from the manifest (not hard-coded).
-  std::uint64_t product_id(nlohmann::json const& manifest, std::string const& name)
+  // The container name for a product, read from the manifest (not hard-coded).
+  std::string container_of(nlohmann::json const& manifest, std::string const& name)
   {
     for (auto const& p : manifest.at("products"))
       if (p.at("name").get<std::string>() == name)
-        return p.at("product_id").get<std::uint64_t>();
+        return p.at("container").get<std::string>();
     require(false, "manifest missing product \"" + name + "\"");
-    return 0;
+    return {};
   }
 
-  // Verify one variant's strategy_one.root against the reference events. The
-  // product registry (pos_id/mom_id) comes from the shared strategy manifest.
+  // Read the whole index TTree into an event_id -> tokens map, once.
+  std::unordered_map<std::uint64_t, fgs::EventIndex> load_index(TTree* index)
+  {
+    std::uint64_t ev = 0;
+    fgs::EventIndex* iv = nullptr;
+    index->SetBranchAddress("event_id", &ev);
+    index->SetBranchAddress("index_value", &iv);
+
+    std::unordered_map<std::uint64_t, fgs::EventIndex> out;
+    Long64_t const n = index->GetEntries();
+    for (Long64_t i = 0; i < n; ++i) {
+      index->GetEntry(i);
+      if (iv)
+        out[ev] = *iv;
+    }
+    index->ResetBranchAddresses();
+    return out;
+  }
+
+  // Verify one variant's file against the reference events: for each target event
+  // the index token locates its row in each product container, and the stored
+  // particle vector must match the reference exactly.
   void verify_variant(fs::path const& root_path,
                       std::string const& variant,
-                      std::uint64_t pos_id,
-                      std::uint64_t mom_id,
+                      std::string const& pos_container,
+                      std::string const& mom_container,
                       std::vector<fgs::Event> const& events,
                       std::vector<std::uint64_t> const& user_events,
                       bool check_all)
   {
-    std::uint64_t num_events = events.size();
+    std::uint64_t const num_events = events.size();
 
     std::cout << "=== variant " << variant << " (" << root_path.string() << ") ===\n";
 
@@ -65,24 +88,16 @@ namespace {
     TTree* index = dynamic_cast<TTree*>(file->Get("index"));
     require(index, "index TTree not found in " + root_path.string());
 
-    std::uint64_t b_row_start, b_row_count;
-    index->SetBranchAddress("row_start", &b_row_start);
-    index->SetBranchAddress("row_count", &b_row_count);
+    std::unordered_map<std::uint64_t, fgs::EventIndex> tokens = load_index(index);
 
-    auto pos_reader = ROOT::RNTupleReader::Open("position", root_path.string());
-    auto px = pos_reader->GetView<float>("x");
-    auto py = pos_reader->GetView<float>("y");
-    auto pz = pos_reader->GetView<float>("z");
-    auto pev = pos_reader->GetView<std::uint64_t>("event_id");
+    auto pos_reader = ROOT::RNTupleReader::Open(pos_container, root_path.string());
+    auto pos_vec = pos_reader->GetView<std::vector<fgs::Position>>("vec_particles_pos");
+    auto pos_eid = pos_reader->GetView<std::uint64_t>("event_id");
 
-    auto mom_reader = ROOT::RNTupleReader::Open("momentum", root_path.string());
-    auto mx = mom_reader->GetView<float>("px");
-    auto my = mom_reader->GetView<float>("py");
-    auto mz = mom_reader->GetView<float>("pz");
-    auto mev = mom_reader->GetView<std::uint64_t>("event_id");
+    auto mom_reader = ROOT::RNTupleReader::Open(mom_container, root_path.string());
+    auto mom_vec = mom_reader->GetView<std::vector<fgs::Momentum>>("vec_particles_mom");
+    auto mom_eid = mom_reader->GetView<std::uint64_t>("event_id");
 
-    // --all verifies every event (exhaustive); otherwise verify exactly the
-    // event ids the user requested via --events (validated in main()).
     std::vector<std::uint64_t> targets;
     if (check_all) {
       targets.resize(num_events);
@@ -94,33 +109,31 @@ namespace {
     for (std::uint64_t target : targets) {
       fgs::Event const& expected = events[target];
 
-      // --- position ---
-      Long64_t e = index->GetEntryNumberWithIndex(static_cast<Long64_t>(target),
-                                                  static_cast<Long64_t>(pos_id));
-      require(e >= 0, variant + ": event " + std::to_string(target) + " not in index (position)");
-      index->GetEntry(e);
-      require(b_row_count == expected.positions.size(), variant + ": position count mismatch");
-      for (std::uint64_t i = 0; i < b_row_count; ++i) {
-        std::uint64_t r = b_row_start + i;
-        require(pev(r) == target, variant + ": position row event_id mismatch");
-        require(px(r) == expected.positions[i].x && py(r) == expected.positions[i].y &&
-                  pz(r) == expected.positions[i].z,
-                variant + ": position value mismatch at event " + std::to_string(target));
-      }
+      auto tit = tokens.find(target);
+      require(tit != tokens.end(), variant + ": event " + std::to_string(target) + " not in index");
+      fgs::EventIndex const& idx = tit->second;
 
-      // --- momentum ---
-      e = index->GetEntryNumberWithIndex(static_cast<Long64_t>(target),
-                                         static_cast<Long64_t>(mom_id));
-      require(e >= 0, variant + ": event " + std::to_string(target) + " not in index (momentum)");
-      index->GetEntry(e);
-      require(b_row_count == expected.momenta.size(), variant + ": momentum count mismatch");
-      for (std::uint64_t i = 0; i < b_row_count; ++i) {
-        std::uint64_t r = b_row_start + i;
-        require(mev(r) == target, variant + ": momentum row event_id mismatch");
-        require(mx(r) == expected.momenta[i].px && my(r) == expected.momenta[i].py &&
-                  mz(r) == expected.momenta[i].pz,
+      auto pt = idx.find("position");
+      require(pt != idx.end(), variant + ": event " + std::to_string(target) + " has no position token");
+      require(pt->second.container == pos_container, variant + ": position container mismatch");
+      auto const& pv = pos_vec(pt->second.entry);
+      require(pos_eid(pt->second.entry) == target, variant + ": position row event_id mismatch");
+      require(pv.size() == expected.positions.size(), variant + ": position count mismatch");
+      for (std::size_t i = 0; i < pv.size(); ++i)
+        require(pv[i].x == expected.positions[i].x && pv[i].y == expected.positions[i].y &&
+                  pv[i].z == expected.positions[i].z,
+                variant + ": position value mismatch at event " + std::to_string(target));
+
+      auto mt = idx.find("momentum");
+      require(mt != idx.end(), variant + ": event " + std::to_string(target) + " has no momentum token");
+      require(mt->second.container == mom_container, variant + ": momentum container mismatch");
+      auto const& mv = mom_vec(mt->second.entry);
+      require(mom_eid(mt->second.entry) == target, variant + ": momentum row event_id mismatch");
+      require(mv.size() == expected.momenta.size(), variant + ": momentum count mismatch");
+      for (std::size_t i = 0; i < mv.size(); ++i)
+        require(mv[i].px == expected.momenta[i].px && mv[i].py == expected.momenta[i].py &&
+                  mv[i].pz == expected.momenta[i].pz,
                 variant + ": momentum value mismatch at event " + std::to_string(target));
-      }
 
       if (!check_all)
         std::cout << "  event " << target << " PASSED (" << expected.positions.size()
@@ -134,7 +147,6 @@ namespace {
 
 int main(int argc, char** argv)
 {
-  // Parse args: --all and/or --events a,b,c, plus up to two positional paths.
   bool check_all = false;
   std::vector<std::uint64_t> user_events;
   std::vector<std::string> positional;
@@ -162,7 +174,6 @@ int main(int argc, char** argv)
   // Reference data for cross-check (outside any timing concern).
   std::vector<fgs::Event> events = fgs::load_all_events(gen_dir);
 
-  // The single strategy manifest lists the product registry and every variant.
   nlohmann::json manifest;
   {
     std::ifstream in(strat_root / "manifest.json");
@@ -170,9 +181,9 @@ int main(int argc, char** argv)
     in >> manifest;
   }
 
-  std::uint64_t num_events = manifest.at("num_events").get<std::uint64_t>();
-  std::uint64_t pos_id = product_id(manifest, "position");
-  std::uint64_t mom_id = product_id(manifest, "momentum");
+  std::uint64_t num_events = manifest.at("total_events").get<std::uint64_t>();
+  std::string pos_container = container_of(manifest, "position");
+  std::string mom_container = container_of(manifest, "momentum");
 
   // Guard against a gen dir / root file mismatch: events[target] below indexes
   // the Phase 1 events, so the counts must agree or we would read out of bounds.
@@ -180,7 +191,6 @@ int main(int argc, char** argv)
           "gen dir has " + std::to_string(events.size()) + " events but manifest says " +
             std::to_string(num_events) + " (regenerate or re-run the writer)");
 
-  // Reject any requested event id that does not exist before reading.
   for (std::uint64_t id : user_events)
     require(id < num_events, "requested event " + std::to_string(id) + " is out of range (" +
                                std::to_string(num_events) + " events)");
@@ -188,12 +198,12 @@ int main(int argc, char** argv)
   auto const& variants = manifest.at("variants");
   for (auto const& v : variants) {
     std::string variant = v.at("name").get<std::string>();
-    // The manifest gives each variant's data file relative to the strategy root.
     fs::path root_path = strat_root / v.at("file").get<std::string>();
-    verify_variant(root_path, variant, pos_id, mom_id, events, user_events, check_all);
+    verify_variant(
+      root_path, variant, pos_container, mom_container, events, user_events, check_all);
   }
 
-  std::cout << "\nall " << variants.size() << " variant(s) verified — index returns identical "
+  std::cout << "\nall " << variants.size() << " variant(s) verified -- index returns identical "
             << "data for ordered and shuffled layouts\n";
   return 0;
 }

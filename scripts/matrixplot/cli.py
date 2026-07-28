@@ -10,8 +10,17 @@ import argparse
 from pathlib import Path
 
 from .bottleneck import plot_bottleneck_breakdown
-from .data import AXES, DEFAULT_METRICS, distinct, read_summary
+from .data import (
+    AXES,
+    DEFAULT_METRICS,
+    distinct,
+    read_summary,
+    run_cluster_page_summary,
+    run_generation_summary,
+    run_payload_mb,
+)
 from .heatmap import make_metric
+from .page_metrics import write_page_metrics_md
 
 
 def main() -> None:
@@ -69,9 +78,19 @@ def main() -> None:
         )
         print(f"  {metric:24} -> {png.relative_to(out_base)}  ({n} panel(s) + {n} pivot CSV(s))")
 
-    pngs = plot_bottleneck_breakdown(rows, args.cols, args.rows, facet_axes, plots_dir, num_events)
+    payload_mb = run_payload_mb(run_dir)
+    cluster_page_summary = run_cluster_page_summary(run_dir)
+    generation_summary = run_generation_summary(run_dir)
+    pngs = plot_bottleneck_breakdown(rows, args.cols, args.rows, facet_axes, plots_dir, num_events,
+                                     payload_mb, cluster_page_summary, generation_summary)
     if pngs:
         for png in pngs:
             print(f"  {'bottleneck_breakdown':24} -> {png.relative_to(out_base)}")
     else:
         print("  bottleneck_breakdown     -> skipped (counters absent or all-zero)")
+
+    md_path = write_page_metrics_md(run_dir)
+    if md_path:
+        print(f"  {'page_metrics_summary':24} -> {md_path.relative_to(run_dir)}")
+    else:
+        print("  page_metrics_summary    -> skipped (n_page_read absent from summary.csv)")

@@ -71,7 +71,8 @@ def _cell_segments(cell, seg_names):
 
 
 def _bottleneck_one_variant(variant_rows, variant_name, col_axis, facet_axes,
-                            plots_dir, num_events, global_max, seg_names):
+                            plots_dir, num_events, global_max, seg_names, payload_mb,
+                            cluster_page_summary, generation_summary):
     """Single stacked-bar bottleneck chart for one variant.  Returns the PNG path."""
     col_vals = distinct(variant_rows, col_axis)
     facet_vals = [distinct(variant_rows, a) for a in facet_axes]
@@ -87,14 +88,16 @@ def _bottleneck_one_variant(variant_rows, variant_name, col_axis, facet_axes,
     _hspace = _rows_frac + 0.45          # leave room for the hanging table + next title
     _table_in = (_rows_frac + 0.08) * _ax_h_in
     _panel_title_in = 1.3
-    _fig_title_in = 0.9
+    _fig_title_in = 1.25
     _title_in = _panel_title_in + _fig_title_in
     _subplot_in = _ax_h_in * (nrows_fig + (nrows_fig - 1) * _hspace)
     fig_h = _subplot_in + _table_in + _title_in
     top_frac = 1.0 - _title_in / fig_h
     bot_frac = _table_in / fig_h
     _suptitle_y = 1.0 - 0.15 / fig_h
-    _legend_y   = 1.0 - 0.50 / fig_h
+    _subtitle_y = 1.0 - 0.42 / fig_h
+    _subtitle_y2 = 1.0 - 0.58 / fig_h
+    _legend_y   = 1.0 - 0.85 / fig_h
 
     panel_w = max(9, 2.8 * len(col_vals))
     fig, axs = plt.subplots(nrows_fig, ncols,
@@ -178,6 +181,22 @@ def _bottleneck_one_variant(variant_rows, variant_name, col_axis, facet_axes,
         f"Wall-time bottleneck breakdown  ·  {num_events} events  ·  {variant_name}  ·  x = {col_axis}",
         fontsize=17, fontweight="bold", y=_suptitle_y,
     )
+    line1_parts = []
+    if generation_summary is not None:
+        line1_parts.append(
+            f"{generation_summary['num_events']} events generated "
+            f"({generation_summary['particles_min']}-{generation_summary['particles_max']} particles/event)"
+        )
+    if payload_mb is not None:
+        line1_parts.append(f"{payload_mb:.3f} MB / event (raw, uncompressed)")
+    if line1_parts:
+        fig.text(0.5, _subtitle_y, "   ·   ".join(line1_parts),
+                 ha="center", va="top", fontsize=10, color="#666666")
+
+    if cluster_page_summary is not None:
+        line2 = (f"{cluster_page_summary['clusters']} cluster(s) on disk, "
+                f"{cluster_page_summary['total_pages']} pages on disk")
+        fig.text(0.5, _subtitle_y2, line2, ha="center", va="top", fontsize=10, color="#666666")
     fig.legend(handles, labels,
                loc="upper center", bbox_to_anchor=(0.5, _legend_y),
                ncol=n_seg, fontsize=13,
@@ -190,7 +209,8 @@ def _bottleneck_one_variant(variant_rows, variant_name, col_axis, facet_axes,
     return png
 
 
-def plot_bottleneck_breakdown(rows, col_axis, row_axis, facet_axes, plots_dir, num_events):
+def plot_bottleneck_breakdown(rows, col_axis, row_axis, facet_axes, plots_dir, num_events,
+                              payload_mb=None, cluster_page_summary=None, generation_summary=None):
     """One stacked-bar breakdown plot per row_axis value (variant).
 
     Each plot shows a single variant; x-axis = col_axis; one stacked bar per
@@ -223,7 +243,8 @@ def plot_bottleneck_breakdown(rows, col_axis, row_axis, facet_axes, plots_dir, n
     for rv in row_vals:
         variant_rows = [r for r in rows if r[row_axis] == rv]
         png = _bottleneck_one_variant(
-            variant_rows, rv, col_axis, facet_axes, plots_dir, num_events, global_max, seg_names
+            variant_rows, rv, col_axis, facet_axes, plots_dir, num_events, global_max, seg_names,
+            payload_mb, cluster_page_summary, generation_summary
         )
         pngs.append(png)
     return pngs

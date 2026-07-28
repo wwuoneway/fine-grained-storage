@@ -30,6 +30,10 @@ def make_metric(rows, metric, row_axis, col_axis, facet_axes, plots_dir, csv_dir
     combos = list(itertools.product(*facet_vals)) if facet_axes else [()]
 
     direction, cmap = DIRECTION.get(metric, ("", "viridis"))
+    # NaN cells as light gray: transparent-over-white on RdYlGn reads as a
+    # mid-scale value.
+    cmap = plt.get_cmap(cmap).copy()
+    cmap.set_bad("#e8e8e8")
 
     n = len(combos)
     ncols = min(n, 3) if n > 1 else 1

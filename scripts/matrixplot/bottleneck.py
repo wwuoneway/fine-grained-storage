@@ -199,7 +199,16 @@ def plot_bottleneck_breakdown(rows, col_axis, row_axis, facet_axes, plots_dir, n
     """
     if not rows or "read_wall_ms" not in rows[0] or "unzip_wall_ms" not in rows[0]:
         return None
-    if all(float(r["read_wall_ms"]) == 0 and float(r["unzip_wall_ms"]) == 0 for r in rows):
+    no_counters = [r for r in rows
+                   if float(r["read_wall_ms"]) == 0 and float(r["unzip_wall_ms"]) == 0]
+    if len(no_counters) == len(rows):
+        return None
+    if no_counters:
+        # Mixed provenance: bars would silently compare different measurement
+        # setups (counters on vs off).
+        names = sorted({r.get("benchmark", "?") for r in no_counters})
+        print("bottleneck: skipping, benchmarks without counters mixed with "
+              f"counted ones: {', '.join(names)}")
         return None
 
     seg_names = _seg_names(rows)

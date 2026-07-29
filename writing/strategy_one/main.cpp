@@ -53,7 +53,7 @@ namespace {
 
   constexpr double kBytesPerMiB = 1024.0 * 1024.0;
 
-  double bytes_to_mb(std::uint64_t bytes) { return fgs::round3(static_cast<double>(bytes) / kBytesPerMiB); }
+  double bytes_to_mib(std::uint64_t bytes) { return fgs::round3(static_cast<double>(bytes) / kBytesPerMiB); }
 
   // Cluster and page counts of one written RNTuple container, read back from its
   // descriptor. These are finalized only once the writer has committed, so this
@@ -142,7 +142,7 @@ namespace {
     manifest["total_events"] = num_events;
     manifest["avg_particles_per_event"] =
       num_events ? static_cast<double>(total_particles) / static_cast<double>(num_events) : 0.0;
-    manifest["avg_event_size_mb"] =
+    manifest["avg_event_size_mib"] =
       num_events ? fgs::round3(mean_file_bytes / static_cast<double>(num_events) / kBytesPerMiB) : 0.0;
     manifest["total_particles"] = total_particles;
     manifest["particles_per_event_min"] = min_particles;
@@ -150,14 +150,14 @@ namespace {
 
     // Raw generated payload per event (both products, uncompressed) -- what the
     // tier's particle count was actually sized to hit, as opposed to
-    // avg_event_size_mb above, which is the on-disk, compressed footprint.
+    // avg_event_size_mib above, which is the on-disk, compressed footprint.
     double const bytes_per_particle =
       static_cast<double>(sizeof(products) / sizeof(products[0])) * static_cast<double>(kComponents) *
       sizeof(float);
-    manifest["avg_raw_payload_mb"] =
+    manifest["avg_raw_payload_mib"] =
       num_events
         ? fgs::round3(static_cast<double>(total_particles) / static_cast<double>(num_events) *
-                       bytes_per_particle / 1.0e6)
+                       bytes_per_particle / kBytesPerMiB)
         : 0.0;
 
     manifest["variants"] = json::array();
@@ -166,7 +166,7 @@ namespace {
       vj["name"] = v.name;
       vj["dir"] = v.name;
       vj["file"] = (fs::path{v.name} / v.file_name).generic_string();
-      vj["file_mb"] = bytes_to_mb(v.bytes);
+      vj["file_mib"] = bytes_to_mib(v.bytes);
       if (v.name == "shuffle")
         vj["shuffle_seed"] = shuffle_seed;
 

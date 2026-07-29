@@ -199,14 +199,14 @@ this file: no ROOT, no opening the `.root`.
     "strategy": "strategy_one",
     "total_events": 10000,
     "avg_particles_per_event": 6.9919,
-    "avg_event_size_mb": 0.001,
+    "avg_event_size_mib": 0.001,
     "total_particles": 69919,
     "variants": [
         {
             "name": "no-shuffle",
             "dir": "no-shuffle",
             "file": "no-shuffle/strategy_one.root",
-            "file_mb": 3.573,
+            "file_mib": 3.573,
             "containers": {
                 "position_container": { "clusters": 1, "pages": 8 },
                 "momentum_container": { "clusters": 1, "pages": 8 }
@@ -216,7 +216,7 @@ this file: no ROOT, no opening the `.root`.
             "name": "shuffle",
             "dir": "shuffle",
             "file": "shuffle/strategy_one_shuffled.root",
-            "file_mb": 3.674,
+            "file_mib": 3.674,
             "shuffle_seed": 7,
             "containers": {
                 "position_container": { "clusters": 1, "pages": 8 },
@@ -249,12 +249,12 @@ this file: no ROOT, no opening the `.root`.
 | `strategy`               | which write strategy produced this output                  |
 | `total_events`           | events written (the writer's source of truth)              |
 | `avg_particles_per_event`| mean particle count per event                              |
-| `avg_event_size_mb`      | mean on-disk footprint of one event (averaged over variants)|
+| `avg_event_size_mib`     | mean on-disk footprint of one event (averaged over variants)|
 | `total_particles`        | sum of all particles written                               |
 | `variants[]`             | one entry per write variant                                |
 | `.name` / `.dir`         | variant name and its subfolder under the strategy root     |
 | `.file`                  | data ROOT file, path relative to the strategy root         |
-| `.file_mb`               | on-disk size of that variant's ROOT file, in MiB           |
+| `.file_mib`              | on-disk size of that variant's ROOT file, in MiB           |
 | `.shuffle_seed`          | seed for the permutation (present only on `shuffle`)       |
 | `.containers{}`          | per data container, its RNTuple `clusters` and `pages`     |
 | `products[]`             | one entry per data product                                 |

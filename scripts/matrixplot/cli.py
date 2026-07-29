@@ -17,7 +17,7 @@ from .data import (
     read_summary,
     run_cluster_page_summary,
     run_generation_summary,
-    run_payload_mb,
+    run_payload_mib,
 )
 from .heatmap import make_metric
 from .page_metrics import write_page_metrics_md
@@ -78,11 +78,11 @@ def main() -> None:
         )
         print(f"  {metric:24} -> {png.relative_to(out_base)}  ({n} panel(s) + {n} pivot CSV(s))")
 
-    payload_mb = run_payload_mb(run_dir)
+    payload_mib = run_payload_mib(run_dir)
     cluster_page_summary = run_cluster_page_summary(run_dir)
     generation_summary = run_generation_summary(run_dir)
     pngs = plot_bottleneck_breakdown(rows, args.cols, args.rows, facet_axes, plots_dir, num_events,
-                                     payload_mb, cluster_page_summary, generation_summary)
+                                     payload_mib, cluster_page_summary, generation_summary)
     if pngs:
         for png in pngs:
             print(f"  {'bottleneck_breakdown':24} -> {png.relative_to(out_base)}")

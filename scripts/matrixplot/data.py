@@ -17,7 +17,7 @@ DEFAULT_METRICS = [
     # ROOT RNTuple counters (bottleneck attribution), if present:
     "read_wall_ms",       # time in storage I/O
     "unzip_wall_ms",      # time decompressing
-    "read_payload_mb",    # bytes pulled from storage
+    "read_payload_mib",   # bytes pulled from storage
     "n_read",             # read amplification (byte-range reads)
     "read_efficiency",    # payload / (payload + overhead)
     "n_page_read",        # sealed pages fetched from storage
@@ -36,7 +36,7 @@ DIRECTION = {
     "throughput_evt_s_mean": ("higher = better", "RdYlGn"),
     "read_wall_ms": ("lower = better", "RdYlGn_r"),
     "unzip_wall_ms": ("lower = better", "RdYlGn_r"),
-    "read_payload_mb": ("lower = better", "RdYlGn_r"),
+    "read_payload_mib": ("lower = better", "RdYlGn_r"),
     "n_read": ("lower = better", "RdYlGn_r"),
     "read_efficiency": ("higher = better", "RdYlGn"),
     "n_page_read": ("lower = better", "RdYlGn_r"),
@@ -69,11 +69,11 @@ def _first_manifest(run_dir: Path) -> dict | None:
     return None
 
 
-def run_payload_mb(run_dir: Path) -> float | None:
-    """Raw (uncompressed) generated payload per event, in MB. None if not found
+def run_payload_mib(run_dir: Path) -> float | None:
+    """Raw (uncompressed) generated payload per event, in MiB. None if not found
     (older run, or field absent)."""
     manifest = _first_manifest(run_dir)
-    return manifest.get("avg_raw_payload_mb") if manifest else None
+    return manifest.get("avg_raw_payload_mib") if manifest else None
 
 
 def run_generation_summary(run_dir: Path) -> dict | None:
@@ -145,7 +145,7 @@ def fmt(metric: str, v: float) -> str:
         return f"{v:.3f}"
     if metric in ("throughput_evt_s_mean", "n_read"):
         return f"{v:.0f}"
-    if metric in ("read_wall_ms", "unzip_wall_ms", "read_payload_mb",
+    if metric in ("read_wall_ms", "unzip_wall_ms", "read_payload_mib",
                   "locate_ms", "load_ms", "fill_ms"):
         return f"{v:.2f}"
     if metric in ("n_page_read", "n_page_unsealed", "n_cluster_loaded"):

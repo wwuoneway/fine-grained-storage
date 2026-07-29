@@ -71,7 +71,7 @@ def _cell_segments(cell, seg_names):
 
 
 def _bottleneck_one_variant(variant_rows, variant_name, col_axis, facet_axes,
-                            plots_dir, num_events, global_max, seg_names, payload_mb,
+                            plots_dir, num_events, global_max, seg_names, payload_mib,
                             cluster_page_summary, generation_summary):
     """Single stacked-bar bottleneck chart for one variant.  Returns the PNG path."""
     col_vals = distinct(variant_rows, col_axis)
@@ -187,8 +187,8 @@ def _bottleneck_one_variant(variant_rows, variant_name, col_axis, facet_axes,
             f"{generation_summary['num_events']} events generated "
             f"({generation_summary['particles_min']}-{generation_summary['particles_max']} particles/event)"
         )
-    if payload_mb is not None:
-        line1_parts.append(f"{payload_mb:.3f} MB / event (raw, uncompressed)")
+    if payload_mib is not None:
+        line1_parts.append(f"{payload_mib:.3f} MiB / event (raw, uncompressed)")
     if line1_parts:
         fig.text(0.5, _subtitle_y, "   ·   ".join(line1_parts),
                  ha="center", va="top", fontsize=10, color="#666666")
@@ -210,7 +210,7 @@ def _bottleneck_one_variant(variant_rows, variant_name, col_axis, facet_axes,
 
 
 def plot_bottleneck_breakdown(rows, col_axis, row_axis, facet_axes, plots_dir, num_events,
-                              payload_mb=None, cluster_page_summary=None, generation_summary=None):
+                              payload_mib=None, cluster_page_summary=None, generation_summary=None):
     """One stacked-bar breakdown plot per row_axis value (variant).
 
     Each plot shows a single variant; x-axis = col_axis; one stacked bar per
@@ -244,7 +244,7 @@ def plot_bottleneck_breakdown(rows, col_axis, row_axis, facet_axes, plots_dir, n
         variant_rows = [r for r in rows if r[row_axis] == rv]
         png = _bottleneck_one_variant(
             variant_rows, rv, col_axis, facet_axes, plots_dir, num_events, global_max, seg_names,
-            payload_mb, cluster_page_summary, generation_summary
+            payload_mib, cluster_page_summary, generation_summary
         )
         pngs.append(png)
     return pngs

@@ -28,7 +28,7 @@ namespace fgs::bench {
   struct ReadCounters {
     double read_wall_ms = 0.0;    // timeWallRead: wall time in storage I/O
     double unzip_wall_ms = 0.0;   // timeWallUnzip: wall time decompressing
-    double read_payload_mb = 0.0; // szReadPayload: bytes pulled from storage
+    double read_payload_mib = 0.0; // szReadPayload: bytes pulled from storage
     std::uint64_t n_read = 0;     // nRead: number of byte-range reads (seeks)
     double read_efficiency = std::numeric_limits<double>::quiet_NaN(); // payload / (payload + overhead)
     std::uint64_t n_page_read = 0;      // nPageRead: sealed pages fetched from storage

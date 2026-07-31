@@ -38,6 +38,12 @@ for exe in "$GEN_EXE" "$WRITE_EXE" "$READ_EXE"; do
   [[ -x "$exe" ]] || { echo "missing executable: $exe -- build first" >&2; exit 1; }
 done
 
+PLOT_PY="$REPO/.venv/bin/python3"
+[[ -x "$PLOT_PY" ]] || {
+  echo "missing $PLOT_PY -- run: python3 -m venv .venv && .venv/bin/pip install -r requirements.txt" >&2
+  exit 1
+}
+
 # exit 0 = manifest matches config = safe to skip this stage. The manifest
 # stores the full generation config, so compare the whole block: any field
 # (num_events, seed, particles, position, momentum, ...) that differs forces a
@@ -63,7 +69,10 @@ seed_ok = all(
     for v in man.get("variants", [])
     if v["name"] == "shuffle"
 )
-sys.exit(0 if (man_variants == cfg_variants and seed_ok) else 1)
+# Write options change the physical layout, so reusing a .root across a change
+# is wrong. Absent on both sides is "all ROOT defaults" and still matches.
+opts_ok = man.get("write_options", {}) == cfg.get("write_options", {})
+sys.exit(0 if (man_variants == cfg_variants and seed_ok and opts_ok) else 1)
 PY
 }
 
@@ -145,7 +154,7 @@ echo "=== phase 2: plots -- ${#new_dirs[@]} run dir(s) ==="
 for d in "${new_dirs[@]}"; do
   echo "--- plotting $d ---"
   env -i PATH=/usr/bin:/bin HOME="$HOME" \
-    /usr/bin/python3 scripts/compare_matrix.py "$d"
+    "$PLOT_PY" scripts/compare_matrix.py "$d"
 done
 
 echo

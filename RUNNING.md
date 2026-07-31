@@ -10,17 +10,24 @@ variant back against the generated binaries.
 
 ## 0. Activate ROOT (once per shell)
 
-ROOT 6.40.02 comes from a Spack environment. The paths are machine-specific, so
-they live in `.env` (copy `.env.example`): `SPACK_SETUP` is the Spack
-`setup-env.sh` to source, `SPACK_ENV` the environment providing ROOT 6.40.
+ROOT 6.40 comes from a Spack environment. The paths are machine-specific, so
+they live in `.env` (copy `.env.example`): `FGS_SPACK_SETUP` is the Spack
+`setup-env.sh` to source, `FGS_SPACK_ENV` the environment providing ROOT 6.40.
 
 ```bash
-source "$SPACK_SETUP" && spack env activate "$SPACK_ENV"
-root-config --version            # expect 6.40.02
+source "$FGS_SPACK_SETUP" && spack env activate "$FGS_SPACK_ENV"
+root-config --version            # expect 6.40.x
 ```
 
 CMake finds ROOT automatically once `root-config` is on the PATH; no paths are
 hardcoded in any `CMakeLists.txt`.
+
+Plotting needs `matplotlib`, which Spack's python breaks, so it runs from its
+own venv instead of the system python3 (one-time setup, any shell):
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+```
 
 ---
 
@@ -53,9 +60,10 @@ scripts/run_study_all.sh          # needs .env and configs/study/axes.json
 ```
 
 It benchmarks every tier with Spack on, then plots every run with Spack off,
-keeping the two environments from colliding. Variants `axes-5000.json` /
-`axes-10000.json` reuse the same dataset and only raise the read `num_events`, so
-no regeneration is needed (`gen_study_configs.py --axes configs/study/axes-5000.json`).
+keeping the two environments from colliding. A variant that only raises the
+read `num_events` on an otherwise unchanged dataset/writing combo needs no
+regeneration; track it under `configs/study/shared/` instead of the gitignored
+`axes.json` (`gen_study_configs.py --axes configs/study/shared/<name>.json`).
 
 Each read run is a self-contained timestamped folder:
 
@@ -68,11 +76,13 @@ output/benchmarks/reading-benchmarks/<YYYYmmdd-HHMMSS>/
   analysis/csv/          the pivot CSVs behind the plots
 ```
 
-Plotting alone (defaults to the newest run) needs Spack **off** so it uses the
-system matplotlib that Spack's Python shadows:
+`run_study_all.sh` already plots every run it produces; re-plot a specific run
+by hand only to pick different axes or a single metric, using the venv from
+step 0:
 
 ```bash
-python3 scripts/compare_matrix.py output/benchmarks/reading-benchmarks/<timestamp>
+.venv/bin/python3 scripts/compare_matrix.py output/benchmarks/reading-benchmarks/<timestamp> \
+  [--rows AXIS --cols AXIS --metric NAME]
 ```
 
 ---

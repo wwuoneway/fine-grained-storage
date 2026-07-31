@@ -10,7 +10,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 add_compile_options(-Wall -Wextra -Wno-cpp)
 
 # One ROOT discovery for the whole project
-find_package(ROOT 6.40.02 REQUIRED COMPONENTS RIO ROOTNTuple ROOTNTupleUtil Tree)
+find_package(ROOT 6.40 REQUIRED COMPONENTS RIO ROOTNTuple ROOTNTupleUtil Tree)
 
 add_subdirectory(core)
 add_subdirectory(generation)

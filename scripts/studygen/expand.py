@@ -1,7 +1,7 @@
 """Expand one tier's axes into dataset and write-option combos."""
 import itertools
 
-from .naming import si, tag_bytes
+from .naming import si, tag_mib
 
 
 def datasets(tier):
@@ -11,21 +11,27 @@ def datasets(tier):
         yield f"s{si(n)}_p{parts['min']}-{parts['max']}", n, parts
 
 
+# ROOT's own MaxUnzippedPageSize (RNTupleWriteOptions.hxx: 1024 * 1024). Asking
+# for it explicitly would write a byte-identical file under a second id, so this
+# value maps to the 'default' combo and reuses whatever 'default' already wrote.
+ROOT_DEFAULT_MAX_PAGE_MIB = 1
+
+
 def write_opts(tier):
     """Yield (wopts_id, write_options_or_None) for each writing combo.
 
-    With no compression/cluster/page sweep there is a single 'default' combo.
+    An absent `max_page_size_mib`, or an entry equal to ROOT's own default,
+    yields the 'default' combo: no write_options at all, so every RNTuple
+    option keeps its ROOT default.
     """
-    w = tier["writing"]
-    comps = w.get("compression")
-    clusters = w.get("cluster_size_bytes")
-    pages = w.get("page_size_bytes")
-    if comps is None and clusters is None and pages is None:
+    pages = tier["writing"].get("max_page_size_mib")
+    if not pages:
         yield "default", None
         return
-    comps = comps or ["default"]
-    clusters = clusters or [0]
-    pages = pages or [0]
-    for comp, cl, pg in itertools.product(comps, clusters, pages):
-        wid = f"{comp.replace(':', '')}_cl{tag_bytes(cl)}_pg{tag_bytes(pg)}"
-        yield wid, {"compression": comp, "cluster_size_bytes": cl, "page_size_bytes": pg}
+    for mib in pages:
+        if not isinstance(mib, (int, float)) or isinstance(mib, bool) or mib <= 0:
+            raise ValueError(f"max_page_size_mib entries must be positive numbers, got {mib!r}")
+        if mib == ROOT_DEFAULT_MAX_PAGE_MIB:
+            yield "default", None
+        else:
+            yield f"pg{tag_mib(mib)}", {"max_page_size_mib": mib}

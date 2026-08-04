@@ -10,15 +10,9 @@ def si(n: int) -> str:
     return str(n)
 
 
-def tag_bytes(b: int) -> str:
-    """Storage-knob tag: 0 -> 'D' (ROOT default), else a compact byte count."""
-    if b == 0:
-        return "D"
-    if b % (1 << 20) == 0:
-        return f"{b >> 20}m"
-    if b % (1 << 10) == 0:
-        return f"{b >> 10}k"
-    return str(b)
+def tag_mib(mib: float) -> str:
+    """Page-size tag, 'p' for the point since it lands in paths: 0.5 -> '0p5mib'."""
+    return f"{float(mib):g}".replace(".", "p") + "mib"
 
 
 def root_file_for(variant: str) -> str:

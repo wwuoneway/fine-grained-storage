@@ -38,7 +38,7 @@ def emit_writing(ds_id, w_id, w_opts, tier, gen_root, write_root):
         "gen_dir": f"{gen_root}/{ds_id}",
         "output_root": f"{write_root}/{ds_id}/{w_id}",
         "variants": tier["writing"]["variants"],
-        "shuffle_seed": tier["writing"]["shuffle_seed"],
+        "shuffle_seed": tier["writing"].get("shuffle_seed", 0),
     }
     if w_opts is not None:
         cfg["write_options"] = w_opts

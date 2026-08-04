@@ -72,7 +72,7 @@ namespace fgs {
 
   } // namespace
 
-  // --- ProductWriter ----------------------------------------------------------
+  // ProductWriter
 
   ProductWriter::ProductWriter(std::filesystem::path const& path,
                                std::string_view product_name,
@@ -119,7 +119,7 @@ namespace fgs {
 
   ProductWriter::~ProductWriter() { stream_.flush(); }
 
-  // --- ProductReader ----------------------------------------------------------
+  // ProductReader
 
   ProductReader::ProductReader(std::filesystem::path const& path)
   {

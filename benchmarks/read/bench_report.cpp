@@ -66,8 +66,9 @@ namespace fgs::bench {
       return colon == std::string::npos ? std::string{} : trim(line.substr(colon + 1));
     }
 
-    // Human-friendly rendering of a raw counter value: nanoseconds -> ms and
-    // bytes -> MB (both /1e6). Other units get no conversion.
+    // Human-friendly rendering of a raw counter value: nanoseconds -> ms (/1e6)
+    // and bytes -> MiB (/2^20, matching the writing side's power-of-two unit).
+    // Other units get no conversion.
     std::string humanize(std::string const& unit, std::string const& value)
     {
       double v = 0.0;
@@ -81,7 +82,7 @@ namespace fgs::bench {
       if (unit == "ns")
         o << v / 1e6 << " ms";
       else if (unit == "B")
-        o << v / 1e6 << " MB";
+        o << v / (1024.0 * 1024.0) << " MiB";
       else
         return {};
       return o.str();
@@ -104,28 +105,133 @@ namespace fgs::bench {
       double wall_mean = 0.0, wall_min = 0.0;
       double lat_mean = 0.0, lat_min = 0.0;
       double thr_mean = 0.0;
+      double read_ms_mean = 0.0, unzip_ms_mean = 0.0, payload_mib_mean = 0.0;
+      double n_read_mean = 0.0, read_eff_mean = 0.0;
+      double n_page_read_mean = 0.0, n_page_unsealed_mean = 0.0, n_cluster_loaded_mean = 0.0;
+      double locate_ms_mean = 0.0, load_ms_mean = 0.0, fill_ms_mean = 0.0;
+      double wall_instr_ms_mean = 0.0;
+      double read_wall_instr_ms_mean = 0.0, unzip_wall_instr_ms_mean = 0.0;
     };
 
     Aggregates aggregate(std::vector<Measurement> const& reps)
     {
       std::vector<double> wall, latency;
-      double thr_sum = 0.0;
+      double read_ms_sum = 0.0, unzip_ms_sum = 0.0, payload_sum = 0.0;
+      double n_read_sum = 0.0, read_eff_sum = 0.0;
+      double n_page_read_sum = 0.0, n_page_unsealed_sum = 0.0, n_cluster_loaded_sum = 0.0;
+      double locate_sum = 0.0, load_sum = 0.0, fill_sum = 0.0;
+      double wall_instr_sum = 0.0;
+      double read_instr_sum = 0.0, unzip_instr_sum = 0.0;
       for (Measurement const& m : reps) {
         wall.push_back(m.wall_s);
         latency.push_back(m.latency_us_per_event);
-        thr_sum += m.throughput_evt_s;
+        read_ms_sum += m.counters.read_wall_ms;
+        unzip_ms_sum += m.counters.unzip_wall_ms;
+        payload_sum += m.counters.read_payload_mib;
+        n_read_sum += static_cast<double>(m.counters.n_read);
+        read_eff_sum += m.counters.read_efficiency;
+        n_page_read_sum += static_cast<double>(m.counters.n_page_read);
+        n_page_unsealed_sum += static_cast<double>(m.counters.n_page_unsealed);
+        n_cluster_loaded_sum += static_cast<double>(m.counters.n_cluster_loaded);
+        locate_sum += m.locate_ms;
+        load_sum += m.load_ms;
+        fill_sum += m.fill_ms;
+        wall_instr_sum += m.wall_instr_ms;
+        read_instr_sum += m.read_wall_instr_ms;
+        unzip_instr_sum += m.unzip_wall_instr_ms;
       }
       auto const n = static_cast<double>(reps.size());
       double const wall_mean = std::accumulate(wall.begin(), wall.end(), 0.0) / n;
       double const lat_mean = std::accumulate(latency.begin(), latency.end(), 0.0) / n;
+      // Derived from mean latency; averaging per-rep rates would overweight
+      // fast reps and disagree with latency_us_mean in the same row.
+      double const thr_mean = lat_mean > 0.0 ? 1.0e6 / lat_mean : 0.0;
       return {reps.size(),
               wall_mean,
               *std::min_element(wall.begin(), wall.end()),
               lat_mean,
               *std::min_element(latency.begin(), latency.end()),
-              thr_sum / n};
+              thr_mean,
+              read_ms_sum / n,
+              unzip_ms_sum / n,
+              payload_sum / n,
+              n_read_sum / n,
+              read_eff_sum / n,
+              n_page_read_sum / n,
+              n_page_unsealed_sum / n,
+              n_cluster_loaded_sum / n,
+              locate_sum / n,
+              load_sum / n,
+              fill_sum / n,
+              wall_instr_sum / n,
+              read_instr_sum / n,
+              unzip_instr_sum / n};
     }
 
+  }
+
+  ReadCounters parse_read_counters(std::string const& raw_dump)
+  {
+    // Sum the raw volumes/times across every product section, then derive ratios.
+    double payload_b = 0.0, overhead_b = 0.0, wall_read_ns = 0.0, wall_unzip_ns = 0.0;
+    std::uint64_t n_read = 0;
+    std::uint64_t n_page_read = 0, n_page_unsealed = 0, n_cluster_loaded = 0;
+
+    std::istringstream in(raw_dump);
+    std::string line;
+    while (std::getline(in, line)) {
+      if (line.empty() || line.rfind("===", 0) == 0)
+        continue;
+      // Raw line: <full.counter.name>|<unit>|<description>|<value>
+      std::vector<std::string> parts;
+      std::size_t prev = 0, pos;
+      while ((pos = line.find('|', prev)) != std::string::npos) {
+        parts.push_back(line.substr(prev, pos - prev));
+        prev = pos + 1;
+      }
+      parts.push_back(line.substr(prev));
+      if (parts.size() < 4)
+        continue;
+
+      std::string const& full = parts.front();
+      std::string const name = full.substr(full.find_last_of('.') + 1);
+      double value = 0.0;
+      try {
+        value = std::stod(parts.back());
+      } catch (...) {
+        continue;
+      }
+
+      if (name == "szReadPayload")
+        payload_b += value;
+      else if (name == "szReadOverhead")
+        overhead_b += value;
+      else if (name == "timeWallRead")
+        wall_read_ns += value;
+      else if (name == "timeWallUnzip")
+        wall_unzip_ns += value;
+      else if (name == "nRead")
+        n_read += static_cast<std::uint64_t>(value);
+      else if (name == "nPageRead")
+        n_page_read += static_cast<std::uint64_t>(value);
+      else if (name == "nPageUnsealed")
+        n_page_unsealed += static_cast<std::uint64_t>(value);
+      else if (name == "nClusterLoaded")
+        n_cluster_loaded += static_cast<std::uint64_t>(value);
+    }
+
+    ReadCounters c;
+    c.read_wall_ms = wall_read_ns / 1e6;
+    c.unzip_wall_ms = wall_unzip_ns / 1e6;
+    c.read_payload_mib = payload_b / (1024.0 * 1024.0);
+    c.n_read = n_read;
+    c.n_page_read = n_page_read;
+    c.n_page_unsealed = n_page_unsealed;
+    c.n_cluster_loaded = n_cluster_loaded;
+    double const total = payload_b + overhead_b;
+    if (total > 0.0)
+      c.read_efficiency = payload_b / total;
+    return c;
   }
 
   std::string timestamp_now() { return format_time("%Y%m%d-%H%M%S"); }
@@ -204,8 +310,12 @@ namespace fgs::bench {
 
   char const* summary_header()
   {
-    return "benchmark_num,benchmark,variant,cache_state,cluster_cache,num_events,reps,"
-           "wall_s_mean,wall_s_min,latency_us_mean,latency_us_min,throughput_evt_s_mean\n";
+    return "benchmark_num,benchmark,variant,access_pattern,cache_state,cluster_cache,implicit_mt,"
+           "num_events,reps,wall_s_mean,wall_s_min,latency_us_mean,latency_us_min,"
+           "throughput_evt_s_mean,"
+           "read_wall_ms,unzip_wall_ms,read_payload_mib,n_read,read_efficiency,"
+           "n_page_read,n_page_unsealed,n_cluster_loaded,"
+           "locate_ms,load_ms,fill_ms,wall_instr_ms,read_wall_instr_ms,unzip_wall_instr_ms\n";
   }
 
   void write_raw_csv(fs::path const& path,
@@ -216,14 +326,24 @@ namespace fgs::bench {
     if (!csv)
       throw std::runtime_error("cannot write CSV: " + path.string());
 
-    csv << "benchmark_num,benchmark,variant,access_pattern,cache_state,cluster_cache,"
-           "num_events,repetition,wall_s,latency_us_per_event,throughput_evt_s,total_values\n";
+    csv << "benchmark_num,benchmark,variant,access_pattern,cache_state,cluster_cache,implicit_mt,"
+           "num_events,repetition,wall_s,latency_us_per_event,throughput_evt_s,total_values,"
+           "read_wall_ms,unzip_wall_ms,read_payload_mib,n_read,read_efficiency,"
+           "n_page_read,n_page_unsealed,n_cluster_loaded,"
+           "locate_ms,load_ms,fill_ms,wall_instr_ms,read_wall_instr_ms,unzip_wall_instr_ms\n";
     for (Measurement const& m : reps)
       csv << id.num << ',' << csv_field(id.name) << ',' << csv_field(id.variant) << ','
           << csv_field(id.access_pattern) << ',' << csv_field(id.cache_state) << ','
-          << csv_field(id.cluster_cache) << ',' << id.num_events << ',' << m.repetition << ','
-          << m.wall_s << ',' << m.latency_us_per_event << ',' << m.throughput_evt_s << ','
-          << m.total_values << '\n';
+          << csv_field(id.cluster_cache) << ',' << csv_field(id.implicit_mt) << ',' << id.num_events
+          << ',' << m.repetition << ',' << m.wall_s << ',' << m.latency_us_per_event << ','
+          << m.throughput_evt_s << ',' << m.total_values << ','
+          << m.counters.read_wall_ms << ',' << m.counters.unzip_wall_ms << ','
+          << m.counters.read_payload_mib << ',' << m.counters.n_read << ','
+          << m.counters.read_efficiency << ','
+          << m.counters.n_page_read << ',' << m.counters.n_page_unsealed << ','
+          << m.counters.n_cluster_loaded << ','
+          << m.locate_ms << ',' << m.load_ms << ',' << m.fill_ms << ',' << m.wall_instr_ms << ','
+          << m.read_wall_instr_ms << ',' << m.unzip_wall_instr_ms << '\n';
   }
 
   void append_summary_row(std::ostream& csv,
@@ -232,12 +352,20 @@ namespace fgs::bench {
   {
     Aggregates const a = aggregate(reps);
     csv << id.num << ',' << csv_field(id.name) << ',' << csv_field(id.variant) << ','
-        << csv_field(id.cache_state) << ',' << csv_field(id.cluster_cache) << ',' << id.num_events
+        << csv_field(id.access_pattern) << ',' << csv_field(id.cache_state) << ','
+        << csv_field(id.cluster_cache) << ',' << csv_field(id.implicit_mt) << ',' << id.num_events
         << ',' << a.reps << ',' << a.wall_mean << ',' << a.wall_min << ',' << a.lat_mean << ','
-        << a.lat_min << ',' << a.thr_mean << '\n';
+        << a.lat_min << ',' << a.thr_mean << ','
+        << a.read_ms_mean << ',' << a.unzip_ms_mean << ',' << a.payload_mib_mean << ','
+        << a.n_read_mean << ',' << a.read_eff_mean << ','
+        << a.n_page_read_mean << ',' << a.n_page_unsealed_mean << ',' << a.n_cluster_loaded_mean << ','
+        << a.locate_ms_mean << ',' << a.load_ms_mean << ',' << a.fill_ms_mean << ','
+        << a.wall_instr_ms_mean << ',' << a.read_wall_instr_ms_mean << ','
+        << a.unzip_wall_instr_ms_mean << '\n';
   }
 
-  void write_benchmark_metadata(fs::path const& path, BenchmarkId const& id)
+  void write_benchmark_metadata(fs::path const& path, BenchmarkId const& id,
+                                std::map<std::string, ContainerFacts> const& dataset_facts)
   {
     std::ofstream out(path);
     if (!out)
@@ -253,6 +381,12 @@ namespace fgs::bench {
         << "repetitions    : " << id.repetitions << '\n'
         << "root_file      : " << id.root_file << '\n'
         << "manifest_file  : " << id.manifest_file << '\n';
+
+    if (!dataset_facts.empty()) {
+      out << "dataset_facts  :\n";
+      for (auto const& [name, facts] : dataset_facts)
+        out << "  " << name << " : clusters=" << facts.clusters << " pages=" << facts.pages << '\n';
+    }
   }
 
   void write_benchmark_summary_txt(fs::path const& path,
@@ -368,7 +502,16 @@ namespace fgs::bench {
         << "wall_s               : " << m.wall_s << '\n'
         << "latency_us_per_event : " << m.latency_us_per_event << '\n'
         << "throughput_evt_s     : " << m.throughput_evt_s << '\n'
-        << "total_values         : " << m.total_values << "\n\n";
+        << "total_values         : " << m.total_values
+        << '\n'
+        << "read_wall_ms         : " << m.counters.read_wall_ms << '\n'
+        << "unzip_wall_ms        : " << m.counters.unzip_wall_ms << '\n'
+        << "read_payload_mib     : " << m.counters.read_payload_mib << '\n'
+        << "n_read               : " << m.counters.n_read << '\n'
+        << "read_efficiency      : " << m.counters.read_efficiency << '\n'
+        << "n_page_read          : " << m.counters.n_page_read << '\n'
+        << "n_page_unsealed      : " << m.counters.n_page_unsealed << '\n'
+        << "n_cluster_loaded     : " << m.counters.n_cluster_loaded << "\n\n";
 
     std::string const table = format_metrics_table(metrics_raw);
     if (table.empty())

@@ -1,0 +1,41 @@
+{
+  "_comment": "Template for configs/study/axes.json, the study matrix scripts/studygen reads by default. axes.json is local and gitignored (tune it per machine, same as .env vs .env.example); copy this file to axes.json and edit the values for your run.",
+  "output_roots": {
+    "generation": "output/generation/study",
+    "writing": "output/writing/study"
+  },
+  "defaults": {
+    "generation": {
+      "seed": 42,
+      "position": {
+        "distribution": "uniform",
+        "x": { "min": -150.0, "max": 150.0 },
+        "y": { "min": -75.0, "max": 75.0 },
+        "z": { "min": -500.0, "max": 500.0 }
+      },
+      "momentum": { "mean": 0.0, "stddev": 1.0, "min_magnitude": 0.05 }
+    }
+  },
+  "tiers": {
+    "smoke": {
+      "generation": {
+        "num_events": [20000],
+        "particles": [{ "min": 2, "max": 10 }]
+      },
+      "writing": {
+        "variants": ["no-shuffle", "shuffle"],
+        "shuffle_seed": 7
+      },
+      "reading": {
+        "access_pattern": ["sequential", "random", "strided"],
+        "stride": 16,
+        "access_seed": 1234,
+        "cache": ["cold", "warm"],
+        "cluster_cache": ["off", "on"],
+        "implicit_mt": ["off"],
+        "num_events": 10000,
+        "repetitions": 4
+      }
+    }
+  }
+}

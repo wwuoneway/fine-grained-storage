@@ -1,41 +1,78 @@
-// fgs_strategy_one: write strategy "strategy_one" — two data-product RNTuples
+// fgs_strategy_one: write strategy "strategy_one" -- two data-product RNTuples
 // (position, momentum) plus a shared TTree index, both inside one ROOT file.
+//
+// Each product is one RNTuple container holding one row per event; a row is the
+// event's whole particle collection (a vector<Position> or vector<Momentum>).
+// The index TTree has two columns, event_id and index_value: for each event,
+// index_value maps a product name to its Token (container + entry), so a reader
+// locates an event's row from the index without assuming any physical layout.
 //
 // It emits one output folder per write variant under the strategy's output root:
 //   <output_root>/no-shuffle/strategy_one.root   (events written in event order)
-//   <output_root>/shuffle/strategy_one.root     (events written in a seeded shuffle)
+//   <output_root>/shuffle/strategy_one_shuffled.root  (events written shuffled)
 // Each folder also carries its own manifest.json. The shuffle changes only the
-// physical row layout — the index makes reads order-independent either way.
+// physical row layout -- the index makes reads order-independent either way.
 //
 // Usage: fgs_strategy_one [config.json]   (default: configs/writing/strategy_one.json)
 
+#include <ROOT/RNTupleInspector.hxx>
 #include <ROOT/RNTupleModel.hxx>
 #include <ROOT/RNTupleWriter.hxx>
 #include <TFile.h>
 #include <TTree.h>
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <string>
+#include <utility>
 #include <vector>
 
-#include "common/ordering.hpp"
 #include "fgs/bin_io.hpp"
+#include "fgs/ordering.hpp"
+#include "fgs/token.hpp"
+#include "fgs/types.hpp"
+#include "fgs/util.hpp"
 
 namespace fs = std::filesystem;
 
 namespace {
-  // product_id encoding: the TTree index needs a numeric minor key. Persisted in
-  // each manifest so readers don't hard-code it. 0 = position, 1 = momentum.
-  constexpr std::uint64_t PRODUCT_ID_POSITION = 0;
-  constexpr std::uint64_t PRODUCT_ID_MOMENTUM = 1;
+  using json = nlohmann::ordered_json;
 
   // Components per particle in a product's flat float buffer (x,y,z / px,py,pz).
   constexpr std::uint64_t kComponents = 3;
+
+  std::string const kPositionContainer = "position_container";
+  std::string const kMomentumContainer = "momentum_container";
+
+  constexpr double kBytesPerMiB = 1024.0 * 1024.0;
+
+  double bytes_to_mib(std::uint64_t bytes) { return fgs::round3(static_cast<double>(bytes) / kBytesPerMiB); }
+
+  // Cluster and page counts of one written RNTuple container, read back from its
+  // descriptor. These are finalized only once the writer has committed, so this
+  // reopens the closed file rather than querying the writer.
+  struct Layout {
+    std::uint64_t clusters = 0;
+    std::uint64_t pages = 0;
+  };
+
+  Layout inspect_layout(std::string const& container, fs::path const& root_path)
+  {
+    auto insp = ROOT::Experimental::RNTupleInspector::Create(container, root_path.string());
+    ROOT::RNTupleDescriptor const& desc = insp->GetDescriptor();
+    Layout l;
+    l.clusters = desc.GetNClusters();
+    for (std::size_t col = 0; col < desc.GetNPhysicalColumns(); ++col)
+      l.pages += insp->GetColumnInspector(static_cast<ROOT::DescriptorId_t>(col)).GetNPages();
+    return l;
+  }
 
   struct StrategyConfig {
     fs::path gen_dir;
@@ -65,6 +102,7 @@ namespace {
     std::string name;
     std::string file_name;
     std::uint64_t bytes;
+    std::vector<std::pair<std::string, Layout>> containers;
   };
 
   // Distinct file name so the two outputs are never confused side by side.
@@ -78,40 +116,77 @@ namespace {
   void write_manifest(fs::path const& path,
                       std::uint64_t num_events,
                       std::uint64_t total_particles,
+                      std::uint64_t min_particles,
+                      std::uint64_t max_particles,
                       std::vector<VariantResult> const& variants,
                       std::uint64_t shuffle_seed)
   {
     struct ProductDesc {
       char const* name;
-      std::uint64_t id;
+      char const* container;
     };
-    constexpr ProductDesc products[] = {{"position", PRODUCT_ID_POSITION},
-                                        {"momentum", PRODUCT_ID_MOMENTUM}};
+    constexpr ProductDesc products[] = {{"position", "position_container"},
+                                        {"momentum", "momentum_container"}};
 
-    nlohmann::json manifest;
+    // Mean on-disk footprint of one event, averaged over the variant files (each
+    // variant stores the same events, so their sizes differ only by row order).
+    std::uint64_t total_bytes = 0;
+    for (VariantResult const& v : variants)
+      total_bytes += v.bytes;
+    double const mean_file_bytes =
+      variants.empty() ? 0.0 : static_cast<double>(total_bytes) / variants.size();
+
+    json manifest;
+    manifest["generated_at"] = fgs::utc_timestamp();
     manifest["strategy"] = "strategy_one";
-    manifest["num_events"] = num_events;
+    manifest["total_events"] = num_events;
+    manifest["avg_particles_per_event"] =
+      num_events ? static_cast<double>(total_particles) / static_cast<double>(num_events) : 0.0;
+    manifest["avg_event_size_mib"] =
+      num_events ? fgs::round3(mean_file_bytes / static_cast<double>(num_events) / kBytesPerMiB) : 0.0;
     manifest["total_particles"] = total_particles;
+    manifest["particles_per_event_min"] = min_particles;
+    manifest["particles_per_event_max"] = max_particles;
 
-    manifest["variants"] = nlohmann::json::array();
+    // Raw generated payload per event (both products, uncompressed) -- what the
+    // tier's particle count was actually sized to hit, as opposed to
+    // avg_event_size_mib above, which is the on-disk, compressed footprint.
+    double const bytes_per_particle =
+      static_cast<double>(sizeof(products) / sizeof(products[0])) * static_cast<double>(kComponents) *
+      sizeof(float);
+    manifest["avg_raw_payload_mib"] =
+      num_events
+        ? fgs::round3(static_cast<double>(total_particles) / static_cast<double>(num_events) *
+                       bytes_per_particle / kBytesPerMiB)
+        : 0.0;
+
+    manifest["variants"] = json::array();
     for (VariantResult const& v : variants) {
-      nlohmann::json vj;
+      json vj;
       vj["name"] = v.name;
       vj["dir"] = v.name;
       vj["file"] = (fs::path{v.name} / v.file_name).generic_string();
-      vj["file_bytes"] = v.bytes;
+      vj["file_mib"] = bytes_to_mib(v.bytes);
       if (v.name == "shuffle")
         vj["shuffle_seed"] = shuffle_seed;
+
+      json containers = json::object();
+      for (auto const& [name, l] : v.containers) {
+        json cj;
+        cj["clusters"] = l.clusters;
+        cj["pages"] = l.pages;
+        containers[name] = cj;
+      }
+      vj["containers"] = containers;
       manifest["variants"].push_back(vj);
     }
 
-    manifest["products"] = nlohmann::json::array();
+    manifest["products"] = json::array();
     for (auto const& pd : products) {
-      nlohmann::json p;
+      json p;
       p["name"] = pd.name;
-      p["product_id"] = pd.id;
-      p["data_container"] = pd.name;
-      p["data_container_type"] = "RNTuple";
+      p["container"] = pd.container;
+      p["container_type"] = "RNTuple";
       p["index_container"] = "index";
       p["index_container_type"] = "TTree";
       manifest["products"].push_back(p);
@@ -123,7 +198,7 @@ namespace {
   // Validate the loaded products before writing. Both must describe the same
   // events, each event's flat buffer must be a whole number of particles
   // (kComponents floats each), and the two products must agree on the particle
-  // count for every event — otherwise their index row ranges would not line up.
+  // count for every event.
   void validate_products(std::vector<std::vector<float>> const& positions,
                          std::vector<std::vector<float>> const& momenta)
   {
@@ -144,7 +219,8 @@ namespace {
   }
 
   // Write one variant's ROOT file: two product RNTuples + the shared index TTree,
-  // iterating events in `order`. Each product's flat float buffer is kComponents per particle.
+  // iterating events in `order`. Each event becomes one row per product (the
+  // event's particle vector) plus one index row carrying both products' tokens.
   void write_variant(std::vector<std::vector<float>> const& positions,
                      std::vector<std::vector<float>> const& momenta,
                      std::vector<std::uint64_t> const& order,
@@ -152,76 +228,57 @@ namespace {
   {
     auto pos_model = ROOT::RNTupleModel::Create();
     auto fld_pos_ei = pos_model->MakeField<std::uint64_t>("event_id");
-    auto fld_x = pos_model->MakeField<float>("x");
-    auto fld_y = pos_model->MakeField<float>("y");
-    auto fld_z = pos_model->MakeField<float>("z");
+    auto fld_vec_pos = pos_model->MakeField<std::vector<fgs::Position>>("vec_particles_pos");
 
     auto mom_model = ROOT::RNTupleModel::Create();
     auto fld_mom_ei = mom_model->MakeField<std::uint64_t>("event_id");
-    auto fld_px = mom_model->MakeField<float>("px");
-    auto fld_py = mom_model->MakeField<float>("py");
-    auto fld_pz = mom_model->MakeField<float>("pz");
+    auto fld_vec_mom = mom_model->MakeField<std::vector<fgs::Momentum>>("vec_particles_mom");
 
     auto file = std::unique_ptr<TFile>(TFile::Open(root_path.c_str(), "RECREATE"));
     if (!file || file->IsZombie())
       throw std::runtime_error("failed to open " + root_path.string());
 
-    // One row per (event, product). BuildIndex(event_id, product_id) -> O(log N) lookup.
     TTree* index_tree = new TTree("index", "Event index"); // owned by file
-    std::uint64_t b_event_id, b_product_id, b_row_start, b_row_count;
-    std::string b_product_name, b_container_name;
+    std::uint64_t b_event_id = 0;
+    fgs::EventIndex b_index_value;
     index_tree->Branch("event_id", &b_event_id);
-    index_tree->Branch("product_id", &b_product_id);
-    index_tree->Branch("product_name", &b_product_name);
-    index_tree->Branch("container_name", &b_container_name);
-    index_tree->Branch("row_start", &b_row_start);
-    index_tree->Branch("row_count", &b_row_count);
+    index_tree->Branch("index_value", &b_index_value);
 
     {
       // Scope ensures writers commit before file->Write().
-      auto pos_writer = ROOT::RNTupleWriter::Append(std::move(pos_model), "position", *file);
-      auto mom_writer = ROOT::RNTupleWriter::Append(std::move(mom_model), "momentum", *file);
+      auto pos_writer = ROOT::RNTupleWriter::Append(std::move(pos_model), kPositionContainer, *file);
+      auto mom_writer = ROOT::RNTupleWriter::Append(std::move(mom_model), kMomentumContainer, *file);
 
       for (std::uint64_t event_id : order) {
         std::vector<float> const& pf = positions[event_id];
-        std::uint64_t pos_n = pf.size() / kComponents;
-        std::uint64_t pos_start = pos_writer->GetNEntries();
-        for (std::uint64_t i = 0; i < pos_n; ++i) {
-          *fld_pos_ei = event_id;
-          *fld_x = pf[kComponents * i];
-          *fld_y = pf[kComponents * i + 1];
-          *fld_z = pf[kComponents * i + 2];
-          pos_writer->Fill();
-        }
-        b_event_id = event_id;
-        b_product_id = PRODUCT_ID_POSITION;
-        b_product_name = "position";
-        b_container_name = "position";
-        b_row_start = pos_start;
-        b_row_count = pos_n;
-        index_tree->Fill();
+        std::uint64_t const pos_n = pf.size() / kComponents;
+        fld_vec_pos->clear();
+        fld_vec_pos->reserve(pos_n);
+        for (std::uint64_t i = 0; i < pos_n; ++i)
+          fld_vec_pos->push_back({pf[kComponents * i], pf[kComponents * i + 1], pf[kComponents * i + 2]});
+        *fld_pos_ei = event_id;
 
         std::vector<float> const& mf = momenta[event_id];
-        std::uint64_t mom_n = mf.size() / kComponents;
-        std::uint64_t mom_start = mom_writer->GetNEntries();
-        for (std::uint64_t i = 0; i < mom_n; ++i) {
-          *fld_mom_ei = event_id;
-          *fld_px = mf[kComponents * i];
-          *fld_py = mf[kComponents * i + 1];
-          *fld_pz = mf[kComponents * i + 2];
-          mom_writer->Fill();
-        }
+        std::uint64_t const mom_n = mf.size() / kComponents;
+        fld_vec_mom->clear();
+        fld_vec_mom->reserve(mom_n);
+        for (std::uint64_t i = 0; i < mom_n; ++i)
+          fld_vec_mom->push_back({mf[kComponents * i], mf[kComponents * i + 1], mf[kComponents * i + 2]});
+        *fld_mom_ei = event_id;
+
+        // GetNEntries() is the row each product's next Fill() lands at.
         b_event_id = event_id;
-        b_product_id = PRODUCT_ID_MOMENTUM;
-        b_product_name = "momentum";
-        b_container_name = "momentum";
-        b_row_start = mom_start;
-        b_row_count = mom_n;
+        b_index_value.clear();
+        b_index_value["position"] = {kPositionContainer, pos_writer->GetNEntries()};
+        b_index_value["momentum"] = {kMomentumContainer, mom_writer->GetNEntries()};
+
+        pos_writer->Fill();
+        mom_writer->Fill();
         index_tree->Fill();
       }
     }
 
-    index_tree->BuildIndex("event_id", "product_id");
+    index_tree->BuildIndex("event_id");
     file->Write();
     file->Close();
   }
@@ -242,8 +299,16 @@ int main(int argc, char** argv)
 
     std::uint64_t num_events = positions.size();
     std::uint64_t total_particles = 0;
-    for (auto const& pf : positions)
-      total_particles += pf.size() / kComponents;
+    std::uint64_t min_particles = std::numeric_limits<std::uint64_t>::max();
+    std::uint64_t max_particles = 0;
+    for (auto const& pf : positions) {
+      std::uint64_t const n = pf.size() / kComponents;
+      total_particles += n;
+      min_particles = std::min(min_particles, n);
+      max_particles = std::max(max_particles, n);
+    }
+    if (positions.empty())
+      min_particles = 0;
     std::cout << "loaded " << num_events << " events, " << total_particles << " particles\n";
 
     std::vector<VariantResult> results;
@@ -260,22 +325,27 @@ int main(int argc, char** argv)
       auto t_end = std::chrono::steady_clock::now();
 
       auto bytes = static_cast<std::uint64_t>(fs::file_size(root_path));
-      results.push_back({variant, file_name, bytes});
 
       double wall_s = std::chrono::duration<double>(t_end - t_start).count();
       std::cout << "variant   : " << variant << "\n"
                 << "  output  : " << root_path << "\n"
                 << "  size    : " << bytes << " bytes\n"
                 << "  wall    : " << wall_s << " s\n";
+
+      VariantResult vr{variant, file_name, bytes, {}};
+      for (std::string const& container : {kPositionContainer, kMomentumContainer}) {
+        Layout l = inspect_layout(container, root_path);
+        vr.containers.emplace_back(container, l);
+        std::cout << "  " << container << ": clusters=" << l.clusters << " pages=" << l.pages
+                  << "\n";
+      }
+      results.push_back(std::move(vr));
     }
 
     // One manifest for the whole strategy (product registry + variant list).
     fs::create_directories(cfg.output_root);
-    write_manifest(cfg.output_root / "manifest.json",
-                   num_events,
-                   total_particles,
-                   results,
-                   cfg.shuffle_seed);
+    write_manifest(cfg.output_root / "manifest.json", num_events, total_particles, min_particles,
+                  max_particles, results, cfg.shuffle_seed);
 
     return 0;
   } catch (std::exception const& e) {

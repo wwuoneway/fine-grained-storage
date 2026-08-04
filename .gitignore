@@ -47,5 +47,26 @@ docs.me/
 # committed.
 output/
 
+.env
+
+# Local AI-agent / editor tooling; never commit.
+.claude/
+.agents/
+.codex/
+
+# Study configs are regenerated from an axes file by scripts/studygen on each
+# run; none of them are tracked.
+configs/generation/auto-generated/
+configs/writing/auto-generated/
+configs/benchmarks/auto-generated/
+
+# axes.json (and any axes-*.json variant) is a local, machine-tuned study
+# matrix, same idea as .env vs .env.example. Loose files directly under
+# configs/study/ are ignored except the template. Reproducible variants meant
+# to be shared belong in the tracked configs/study/shared/ subdirectory instead,
+# which this pattern does not reach.
+configs/study/*.json
+!configs/study/axes-example.json
+
 # CMake build trees (also covered by build/ above, listed here for clarity).
 build/

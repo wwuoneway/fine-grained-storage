@@ -17,6 +17,7 @@ from .data import (
     read_summary,
     run_cluster_page_summary,
     run_generation_summary,
+    run_max_page_size,
     run_payload_mib,
 )
 from .heatmap import make_metric
@@ -81,8 +82,10 @@ def main() -> None:
     payload_mib = run_payload_mib(run_dir)
     cluster_page_summary = run_cluster_page_summary(run_dir)
     generation_summary = run_generation_summary(run_dir)
+    max_page_size = run_max_page_size(run_dir)
     pngs = plot_bottleneck_breakdown(rows, args.cols, args.rows, facet_axes, plots_dir, num_events,
-                                     payload_mib, cluster_page_summary, generation_summary)
+                                     payload_mib, cluster_page_summary, generation_summary,
+                                     max_page_size)
     if pngs:
         for png in pngs:
             print(f"  {'bottleneck_breakdown':24} -> {png.relative_to(out_base)}")

@@ -88,6 +88,20 @@ def run_generation_summary(run_dir: Path) -> dict | None:
     }
 
 
+MAX_PAGE_LINE = re.compile(r"^max_page_size\s*:\s*(\d+) bytes", re.M)
+
+
+def run_max_page_size(run_dir: Path) -> dict | None:
+    """MaxUnzippedPageSize the benchmarked files were written with, as
+    {bytes, mib}. None for runs whose metadata predates the field."""
+    for meta_path in sorted(run_dir.glob("benchmarks/benchmark_*/metadata.txt")):
+        m = MAX_PAGE_LINE.search(meta_path.read_text())
+        if m:
+            b = int(m.group(1))
+            return {"bytes": b, "mib": b / (1 << 20)}
+    return None
+
+
 FACTS_LINE = re.compile(r"^\s+(\S+)\s*:\s*clusters=(\d+)\s+pages=(\d+)\s*$")
 
 

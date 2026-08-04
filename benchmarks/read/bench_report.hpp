@@ -80,6 +80,7 @@ namespace fgs::bench {
     std::uint64_t repetitions = 0;
     std::string root_file;
     std::string manifest_file;
+    std::uint64_t max_page_size_bytes = 0;
   };
 
   std::string timestamp_now();   // YYYYmmdd-HHMMSS (for run-directory names)

@@ -24,6 +24,16 @@ namespace fgs::bench {
 
   namespace {
 
+    // Both units, because ROOT's option is bytes but the study axis is MiB.
+    std::string page_size_text(std::uint64_t bytes)
+    {
+      if (bytes == 0)
+        return "unknown (file written before this was recorded)";
+      std::ostringstream os;
+      os << bytes << " bytes (" << static_cast<double>(bytes) / (1024.0 * 1024.0) << " MiB)";
+      return os.str();
+    }
+
     std::string trim(std::string const& s)
     {
       std::size_t const a = s.find_first_not_of(" \t");
@@ -380,7 +390,8 @@ namespace fgs::bench {
         << "num_events     : " << id.num_events << '\n'
         << "repetitions    : " << id.repetitions << '\n'
         << "root_file      : " << id.root_file << '\n'
-        << "manifest_file  : " << id.manifest_file << '\n';
+        << "manifest_file  : " << id.manifest_file << '\n'
+        << "max_page_size  : " << page_size_text(id.max_page_size_bytes) << '\n';
 
     if (!dataset_facts.empty()) {
       out << "dataset_facts  :\n";
@@ -499,6 +510,7 @@ namespace fgs::bench {
         << "cache_state          : " << id.cache_state << '\n'
         << "cluster_cache        : " << id.cluster_cache << '\n'
         << "num_events           : " << id.num_events << '\n'
+        << "max_page_size        : " << page_size_text(id.max_page_size_bytes) << '\n'
         << "wall_s               : " << m.wall_s << '\n'
         << "latency_us_per_event : " << m.latency_us_per_event << '\n'
         << "throughput_evt_s     : " << m.throughput_evt_s << '\n'

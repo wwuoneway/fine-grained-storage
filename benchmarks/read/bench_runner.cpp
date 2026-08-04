@@ -163,7 +163,9 @@ namespace fgs::bench {
                                n_events,
                                bench.repetitions,
                                bench.root_file.string(),
-                               bench.manifest_file.string()};
+                               bench.manifest_file.string(),
+                               manifest.value("write_options_effective", nlohmann::json::object())
+                                 .value("max_unzipped_page_size_bytes", std::uint64_t{0})};
     fgs::bench::write_benchmark_metadata(bench_dir / "metadata.txt", id, dataset_facts);
 
     std::ofstream log(bench_dir / "benchmark.log");

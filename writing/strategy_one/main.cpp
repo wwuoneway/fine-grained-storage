@@ -17,6 +17,7 @@
 
 #include <ROOT/RNTupleInspector.hxx>
 #include <ROOT/RNTupleModel.hxx>
+#include <ROOT/RNTupleWriteOptions.hxx>
 #include <ROOT/RNTupleWriter.hxx>
 #include <TFile.h>
 #include <TTree.h>
@@ -74,11 +75,25 @@ namespace {
     return l;
   }
 
+  // MiB, not MB: ROOT's write options are byte counts against power-of-two
+  // defaults (MaxUnzippedPageSize is 1 MiB), so 10^6 would never line up.
+  std::size_t mib_to_bytes(double mib, std::string const& key)
+  {
+    if (!(mib > 0.0))
+      throw std::runtime_error("write_options." + key + " must be greater than 0");
+    return static_cast<std::size_t>(std::llround(mib * kBytesPerMiB));
+  }
+
   struct StrategyConfig {
     fs::path gen_dir;
     fs::path output_root;
     std::vector<std::string> variants;
     std::uint64_t shuffle_seed = 0;
+    // Kept alongside the ROOT object below because run_study_all.sh diffs this
+    // block against the config to decide whether a rewrite is needed, and
+    // recovering MiB from ROOT's rounded byte count would not survive that.
+    json write_options_json = json::object();
+    ROOT::RNTupleWriteOptions write_options;
   };
 
   StrategyConfig load_strategy_config(fs::path const& path)
@@ -87,7 +102,7 @@ namespace {
     if (!in)
       throw std::runtime_error("cannot open config: " + path.string());
 
-    nlohmann::json j;
+    json j;
     in >> j;
 
     StrategyConfig cfg;
@@ -95,6 +110,17 @@ namespace {
     cfg.output_root = j.at("output_root").get<std::string>();
     cfg.variants = j.at("variants").get<std::vector<std::string>>();
     cfg.shuffle_seed = j.at("shuffle_seed").get<std::uint64_t>();
+
+    if (auto it = j.find("write_options"); it != j.end()) {
+      cfg.write_options_json = *it;
+      for (auto const& [key, value] : it->items()) {
+        if (key == "max_page_size_mib")
+          cfg.write_options.SetMaxUnzippedPageSize(mib_to_bytes(value.get<double>(), key));
+        else
+          // Ignoring it would label the run with a layout it was never written in.
+          throw std::runtime_error("write_options: unsupported key '" + key + "'");
+      }
+    }
     return cfg;
   }
 
@@ -119,7 +145,9 @@ namespace {
                       std::uint64_t min_particles,
                       std::uint64_t max_particles,
                       std::vector<VariantResult> const& variants,
-                      std::uint64_t shuffle_seed)
+                      std::uint64_t shuffle_seed,
+                      json const& write_options_json,
+                      ROOT::RNTupleWriteOptions const& write_options)
   {
     struct ProductDesc {
       char const* name;
@@ -147,6 +175,10 @@ namespace {
     manifest["total_particles"] = total_particles;
     manifest["particles_per_event_min"] = min_particles;
     manifest["particles_per_event_max"] = max_particles;
+
+    manifest["write_options"] = write_options_json;
+    manifest["write_options_effective"] = {
+      {"max_unzipped_page_size_bytes", write_options.GetMaxUnzippedPageSize()}};
 
     // Raw generated payload per event (both products, uncompressed) -- what the
     // tier's particle count was actually sized to hit, as opposed to
@@ -224,7 +256,8 @@ namespace {
   void write_variant(std::vector<std::vector<float>> const& positions,
                      std::vector<std::vector<float>> const& momenta,
                      std::vector<std::uint64_t> const& order,
-                     fs::path const& root_path)
+                     fs::path const& root_path,
+                     ROOT::RNTupleWriteOptions const& wopts)
   {
     auto pos_model = ROOT::RNTupleModel::Create();
     auto fld_pos_ei = pos_model->MakeField<std::uint64_t>("event_id");
@@ -246,8 +279,10 @@ namespace {
 
     {
       // Scope ensures writers commit before file->Write().
-      auto pos_writer = ROOT::RNTupleWriter::Append(std::move(pos_model), kPositionContainer, *file);
-      auto mom_writer = ROOT::RNTupleWriter::Append(std::move(mom_model), kMomentumContainer, *file);
+      auto pos_writer =
+        ROOT::RNTupleWriter::Append(std::move(pos_model), kPositionContainer, *file, wopts);
+      auto mom_writer =
+        ROOT::RNTupleWriter::Append(std::move(mom_model), kMomentumContainer, *file, wopts);
 
       for (std::uint64_t event_id : order) {
         std::vector<float> const& pf = positions[event_id];
@@ -310,6 +345,10 @@ int main(int argc, char** argv)
     if (positions.empty())
       min_particles = 0;
     std::cout << "loaded " << num_events << " events, " << total_particles << " particles\n";
+    std::cout << "max unzipped page size: " << cfg.write_options.GetMaxUnzippedPageSize()
+              << " bytes"
+              << (cfg.write_options_json.contains("max_page_size_mib") ? "" : " (ROOT default)")
+              << "\n";
 
     std::vector<VariantResult> results;
     for (std::string const& variant : cfg.variants) {
@@ -321,7 +360,7 @@ int main(int argc, char** argv)
       fs::path root_path = dir / file_name;
 
       auto t_start = std::chrono::steady_clock::now();
-      write_variant(positions, momenta, order, root_path);
+      write_variant(positions, momenta, order, root_path, cfg.write_options);
       auto t_end = std::chrono::steady_clock::now();
 
       auto bytes = static_cast<std::uint64_t>(fs::file_size(root_path));
@@ -345,7 +384,8 @@ int main(int argc, char** argv)
     // One manifest for the whole strategy (product registry + variant list).
     fs::create_directories(cfg.output_root);
     write_manifest(cfg.output_root / "manifest.json", num_events, total_particles, min_particles,
-                  max_particles, results, cfg.shuffle_seed);
+                  max_particles, results, cfg.shuffle_seed, cfg.write_options_json,
+                  cfg.write_options);
 
     return 0;
   } catch (std::exception const& e) {

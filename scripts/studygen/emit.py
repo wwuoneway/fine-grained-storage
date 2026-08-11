@@ -53,10 +53,32 @@ def emit_benchmark(ds_id, w_id, tier, write_root):
     root = f"{write_root}/{ds_id}/{w_id}"
     cases = []
     k = 0
-    for variant, ap, cache, cc, imt in itertools.product(
-        variants, r["access_pattern"], r["cache"], r["cluster_cache"], r["implicit_mt"]
+    # Distance and stride are each read by one pattern only, so each is crossed
+    # with that pattern alone: a full cross would emit N identical copies of
+    # every pattern that ignores the value.
+    def as_list(key, default):
+        v = r.get(key, default)
+        return v if isinstance(v, list) else [v]
+
+    pattern_params = []
+    for ap in r["access_pattern"]:
+        if ap == "scatter":
+            pattern_params += [(ap, d, 0) for d in as_list("scatter_distance", 1)]
+        elif ap == "strided":
+            pattern_params += [(ap, 0, s) for s in as_list("stride", 16)]
+        else:
+            pattern_params.append((ap, 0, 0))
+
+    for variant, (ap, dist, stride), cache, cc, imt in itertools.product(
+        variants, pattern_params, r["cache"], r["cluster_cache"], r["implicit_mt"]
     ):
         k += 1
+        if ap == "scatter":
+            ap_label = f"scatter-{dist}"
+        elif ap == "strided":
+            ap_label = f"strided-{stride}"
+        else:
+            ap_label = ap
         os_cache = {
             "state": cache,
             "evict_method": "posix_fadvise" if cache == "cold" else "none",
@@ -68,9 +90,9 @@ def emit_benchmark(ds_id, w_id, tier, write_root):
                 "enabled": True,
                 "metadata": {
                     "benchmark_num": k,
-                    "name": f"{ds_id} {w_id} {variant} {ap} {cache} cc-{cc} imt-{imt}",
+                    "name": f"{ds_id} {w_id} {variant} {ap_label} {cache} cc-{cc} imt-{imt}",
                     "description": (
-                        f"{variant} layout, {ap} access, {cache} cache, "
+                        f"{variant} layout, {ap_label} access, {cache} cache, "
                         f"cluster_cache={cc}, implicit_mt={imt}"
                     ),
                     "variant": variant,
@@ -81,7 +103,9 @@ def emit_benchmark(ds_id, w_id, tier, write_root):
                 },
                 "num_events": r["num_events"],
                 "access_pattern": ap,
-                "stride": r.get("stride", 16),
+                "scatter_distance": dist,
+                "scatter_seed": r.get("scatter_seed", 1234),
+                "stride": stride,
                 "access_seed": r.get("access_seed", 1234),
                 "repetitions": r["repetitions"],
                 "os_cache": os_cache,

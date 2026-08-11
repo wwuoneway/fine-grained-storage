@@ -1,6 +1,7 @@
 {
   "_comment": "Template for configs/study/axes.json, the study matrix scripts/studygen reads by default. axes.json is local and gitignored (tune it per machine, same as .env vs .env.example); copy this file to axes.json and edit the values for your run.",
   "_comment_writing": "tiers.<tier>.writing.max_page_size_mib is optional. Each entry is one value of RNTuple's MaxUnzippedPageSize, given in MiB (2^20 bytes) and swept as its own write-options combo (ids pg0p25mib, pg5mib, ...) with its own written files and benchmark config, so the sweep multiplies the run count. Fractional values are allowed. An entry of 1 is ROOT's own default, so it maps to the 'default' combo and reuses the files written without any write options rather than duplicating them. Delete the key entirely for the same effect with no sweep.",
+  "_comment_reading": "tiers.<tier>.reading.scatter_distance is a list and is crossed, but only with the 'scatter' access pattern: every other pattern gets one case, as the distance does not apply to it. scatter_seed is a scalar copied to every case, like access_seed and stride. Distance 0 is accepted and reproduces the sequential order; it must stay below num_events, and below num_events/10 to avoid the clamp at the array ends distorting the order.",
   "output_roots": {
     "generation": "output/generation/study",
     "writing": "output/writing/study"
@@ -29,8 +30,10 @@
         "max_page_size_mib": [0.25, 1]
       },
       "reading": {
-        "access_pattern": ["sequential", "random", "strided"],
-        "stride": 16,
+        "access_pattern": ["sequential", "random", "strided", "scatter"],
+        "stride": [2, 4, 8, 10, 12, 16, 20, 32],
+        "scatter_distance": [1, 2, 4, 8, 16, 32],
+        "scatter_seed": 1234,
         "access_seed": 1234,
         "cache": ["cold", "warm"],
         "cluster_cache": ["off", "on"],

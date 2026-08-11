@@ -17,9 +17,10 @@ def pivot(sel: list[dict], metric, row_axis, col_axis, row_vals, col_vals):
     return grid
 
 
-def write_pivot_csv(path, grid, row_axis, col_axis, row_vals, col_vals):
+def write_pivot_csv(path, grid, row_axis, col_axis, row_vals, col_vals, label=None):
+    corner = f"{row_axis}\\{col_axis}" if label is None else f"{row_axis}\\{col_axis} [{label}]"
     with open(path, "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow([f"{row_axis}\\{col_axis}"] + col_vals)
+        w.writerow([corner] + col_vals)
         for i, rv in enumerate(row_vals):
             w.writerow([rv] + ["" if math.isnan(x) else x for x in grid[i]])

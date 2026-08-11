@@ -12,7 +12,7 @@ from pathlib import Path
 from .bottleneck import plot_bottleneck_breakdown
 from .data import (
     AXES,
-    DEFAULT_METRICS,
+    METRICS,
     distinct,
     read_summary,
     run_cluster_page_summary,
@@ -32,6 +32,8 @@ def main() -> None:
     ap.add_argument("--rows", default="access_pattern", choices=AXES, help="pivot row axis")
     ap.add_argument("--cols", default="variant", choices=AXES, help="pivot column axis")
     ap.add_argument("--metric", default=None, help="single metric (default: all present)")
+    ap.add_argument("--per-metric", action="store_true",
+                    help="also write one heatmap per metric (default: pivot CSVs only)")
     args = ap.parse_args()
 
     run_dir = Path(args.run_dir)
@@ -51,11 +53,11 @@ def main() -> None:
         if args.metric not in rows[0]:
             raise SystemExit(
                 f"metric \"{args.metric}\" is not a summary.csv column "
-                f"(available: {', '.join(m for m in DEFAULT_METRICS if m in rows[0])})"
+                f"(available: {', '.join(m for m in METRICS if m in rows[0])})"
             )
         metrics = [args.metric]
     else:
-        metrics = [m for m in DEFAULT_METRICS if m in rows[0]]
+        metrics = [m for m in METRICS if m in rows[0]]
 
     # Facet over the remaining sweep axes that actually vary (>1 value).
     facet_axes = [
@@ -75,20 +77,23 @@ def main() -> None:
     print(f"outputs   : {out_base}/  (plots/ + csv/)\n")
     for metric in metrics:
         png, n = make_metric(
-            rows, metric, args.rows, args.cols, facet_axes, plots_dir, csv_dir, num_events
+            rows, metric, args.rows, args.cols, facet_axes, plots_dir, csv_dir,
+            num_events, render=args.per_metric
         )
-        print(f"  {metric:24} -> {png.relative_to(out_base)}  ({n} panel(s) + {n} pivot CSV(s))")
+        if png is None:
+            print(f"  {metric:24} -> {n} pivot CSV(s)  (--per-metric for the heatmap)")
+        else:
+            print(f"  {metric:24} -> {png.relative_to(out_base)}  ({n} panel(s) + {n} CSV(s))")
 
     payload_mib = run_payload_mib(run_dir)
     cluster_page_summary = run_cluster_page_summary(run_dir)
     generation_summary = run_generation_summary(run_dir)
     max_page_size = run_max_page_size(run_dir)
-    pngs = plot_bottleneck_breakdown(rows, args.cols, args.rows, facet_axes, plots_dir, num_events,
-                                     payload_mib, cluster_page_summary, generation_summary,
-                                     max_page_size)
-    if pngs:
-        for png in pngs:
-            print(f"  {'bottleneck_breakdown':24} -> {png.relative_to(out_base)}")
+    png = plot_bottleneck_breakdown(rows, args.rows, args.cols, facet_axes, plots_dir, num_events,
+                                    payload_mib, cluster_page_summary, generation_summary,
+                                    max_page_size)
+    if png:
+        print(f"  {'bottleneck_breakdown':24} -> {png.relative_to(out_base)}")
     else:
         print("  bottleneck_breakdown     -> skipped (counters absent or all-zero)")
 

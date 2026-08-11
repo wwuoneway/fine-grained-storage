@@ -1,6 +1,7 @@
 #include "bench_config.hpp"
 
 #include <fstream>
+#include <iostream>
 #include <stdexcept>
 
 #include <nlohmann/json.hpp>
@@ -79,6 +80,8 @@ namespace fgs::bench {
     bench.access_pattern = j.value("access_pattern", "sequential");
     bench.access_seed = j.value("access_seed", std::uint64_t{1234});
     bench.stride = j.value("stride", std::uint64_t{16});
+    bench.scatter_distance = j.value("scatter_distance", std::uint64_t{1});
+    bench.scatter_seed = j.value("scatter_seed", std::uint64_t{1234});
     bench.repetitions = j.value("repetitions", std::uint64_t{1});
 
     auto const& os_cache = j.at("os_cache");
@@ -95,11 +98,27 @@ namespace fgs::bench {
     if (bench.repetitions == 0)
       throw std::runtime_error("benchmark \"" + bench.name + "\" has repetitions=0");
     if (bench.access_pattern != "sequential" && bench.access_pattern != "random" &&
-        bench.access_pattern != "strided")
+        bench.access_pattern != "strided" && bench.access_pattern != "scatter")
       throw std::runtime_error("benchmark \"" + bench.name + "\" has unknown access_pattern \"" +
                                bench.access_pattern + "\"");
-    if (bench.stride == 0)
+    // Cases that are not strided carry stride 0 to mark the value unused.
+    if (bench.access_pattern == "strided" && bench.stride == 0)
       throw std::runtime_error("benchmark \"" + bench.name + "\" has stride=0");
+    // Clamping the swap target into [0, n-1] piles roughly distance/(2*num_events)
+    // of the rolls onto the two end indices, so a large distance distorts the
+    // order instead of scattering it. Distance 0 is the identity baseline.
+    if (bench.access_pattern == "scatter") {
+      if (bench.scatter_distance >= bench.num_events)
+        throw std::runtime_error(
+          "benchmark \"" + bench.name +
+          "\" has scatter_distance >= num_events (scatter_distance=" +
+          std::to_string(bench.scatter_distance) +
+          ", num_events=" + std::to_string(bench.num_events) + ")");
+      if (bench.scatter_distance > bench.num_events / 10)
+        std::cerr << "warning: benchmark \"" << bench.name << "\" has scatter_distance="
+                  << bench.scatter_distance << " above num_events/10 ("
+                  << bench.num_events / 10 << "): clamping at the ends distorts the order\n";
+    }
     if (bench.cache_state == CacheState::Cold && bench.evict_method != "posix_fadvise")
       throw std::runtime_error("benchmark \"" + bench.name +
                                "\" only supports cold evict_method=posix_fadvise for now");

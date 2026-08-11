@@ -31,6 +31,16 @@ namespace fgs::bench {
       return manifest.at("products").at(0).at("index_container").get<std::string>();
     }
 
+    OrderSpec order_spec(BenchmarkCase const& bench, std::uint64_t n_events)
+    {
+      return {bench.access_pattern,
+              n_events,
+              bench.access_seed,
+              bench.stride,
+              bench.scatter_distance,
+              bench.scatter_seed};
+    }
+
     // Write the same text to stdout and to the run.txt log, so there is always a
     // scannable plain-text record next to the CSVs.
     void tee(std::ostream& log, std::string const& text)
@@ -49,6 +59,7 @@ namespace fgs::bench {
          << "variant         : " << bench.variant << "\n"
          << "root file       : " << root_path << "\n"
          << "access_pattern  : " << bench.access_pattern << "\n"
+         << "scatter_distance: " << bench.scatter_distance << "\n"
          << "events config   : " << bench.num_events << "\n"
          << "events used     : " << n_events_used << "\n"
          << "repetitions     : " << bench.repetitions << "\n"
@@ -73,10 +84,9 @@ namespace fgs::bench {
       m.repetition = repetition;
 
       // Build the visitation order before the timer so ordering cost never enters
-      // the measured region. Sequential/strided are allocation-free; only random
-      // materializes a permutation (see access_order.hpp).
-      std::unique_ptr<EventOrder> order =
-        make_event_order(bench.access_pattern, n_events, bench.access_seed, bench.stride);
+      // the measured region. Sequential/strided are allocation-free; random and
+      // scatter materialize a permutation (see access_order.hpp).
+      std::unique_ptr<EventOrder> order = make_event_order(order_spec(bench, n_events));
 
       // Cheap dead-code-elimination sink: counting the values read keeps `values`
       // used so the optimizer can't drop the read loop, without adding arithmetic
@@ -152,11 +162,23 @@ namespace fgs::bench {
     fs::create_directories(bench_dir / "csv");
     fs::create_directories(bench_dir / "runs");
 
+    // A throwaway order built outside every timed region, only so the realized
+    // displacement can be reported next to the requested distance. Other
+    // patterns report distance 0, so the column never carries a value that was
+    // parsed but not applied.
+    bool const is_scatter = bench.access_pattern == "scatter";
+    OrderStats const scatter_stats =
+      is_scatter ? make_event_order(order_spec(bench, n_events))->stats() : OrderStats{};
+    std::uint64_t const scatter_distance = is_scatter ? bench.scatter_distance : 0;
+    std::uint64_t const stride = bench.access_pattern == "strided" ? bench.stride : 0;
+
     fgs::bench::BenchmarkId id{bench.benchmark_num,
                                bench.name,
                                bench.description,
                                bench.variant,
                                bench.access_pattern,
+                               scatter_distance,
+                               stride,
                                cache_state_name(bench.cache_state),
                                bench.cluster_cache,
                                bench.implicit_mt,
@@ -165,7 +187,10 @@ namespace fgs::bench {
                                bench.root_file.string(),
                                bench.manifest_file.string(),
                                manifest.value("write_options_effective", nlohmann::json::object())
-                                 .value("max_unzipped_page_size_bytes", std::uint64_t{0})};
+                                 .value("max_unzipped_page_size_bytes", std::uint64_t{0}),
+                               is_scatter ? bench.scatter_seed : std::uint64_t{0},
+                               scatter_stats.mean_displacement,
+                               scatter_stats.max_displacement};
     fgs::bench::write_benchmark_metadata(bench_dir / "metadata.txt", id, dataset_facts);
 
     std::ofstream log(bench_dir / "benchmark.log");

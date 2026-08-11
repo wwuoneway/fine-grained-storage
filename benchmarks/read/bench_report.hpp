@@ -73,6 +73,8 @@ namespace fgs::bench {
     std::string description;
     std::string variant;
     std::string access_pattern;
+    std::uint64_t scatter_distance = 0;
+    std::uint64_t stride = 0;
     std::string cache_state;
     std::string cluster_cache;
     std::string implicit_mt;
@@ -81,9 +83,13 @@ namespace fgs::bench {
     std::string root_file;
     std::string manifest_file;
     std::uint64_t max_page_size_bytes = 0;
+    std::uint64_t scatter_seed = 0;
+    // Realized displacement of the scatter order, zero for every other pattern.
+    double scatter_mean_displacement = 0.0;
+    std::uint64_t scatter_max_displacement = 0;
   };
 
-  std::string timestamp_now();   // YYYYmmdd-HHMMSS (for run-directory names)
+  std::string timestamp_now();   // YYYYmmdd-HHMMSS
   std::string timestamp_human(); // YYYY-MM-DD HH:MM:SS (for readable reports)
 
   // Machine description (CPU, cores, RAM, kernel, ROOT version) as JSON.

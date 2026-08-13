@@ -78,6 +78,7 @@ namespace fgs::bench {
     std::string cache_state;
     std::string cluster_cache;
     std::string implicit_mt;
+    std::string containers; // the containers read, names joined with '|'
     std::uint64_t num_events = 0;
     std::uint64_t repetitions = 0;
     std::string root_file;

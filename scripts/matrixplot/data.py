@@ -91,6 +91,16 @@ def run_generation_summary(run_dir: Path) -> dict | None:
     }
 
 
+def container_summary(rows: list[dict]) -> str | None:
+    """Which containers were read, e.g. "1 container (position_container)".
+    None when the rows predate the column, or disagree."""
+    values = {r.get("containers") for r in rows}
+    if len(values) != 1 or not (names := values.pop()):
+        return None
+    read = names.split("|")
+    return f"{len(read)} container{'s' if len(read) > 1 else ''} ({' + '.join(read)})"
+
+
 MAX_PAGE_LINE = re.compile(r"^max_page_size\s*:\s*(\d+) bytes", re.M)
 
 

@@ -60,6 +60,10 @@ def emit_benchmark(ds_id, w_id, tier, write_root):
         v = r.get(key, default)
         return v if isinstance(v, list) else [v]
 
+    # One selection for the whole run, not a crossed axis: it must not multiply
+    # the case count.
+    products = r.get("products")
+
     pattern_params = []
     for ap in r["access_pattern"]:
         if ap == "scatter":
@@ -85,6 +89,12 @@ def emit_benchmark(ds_id, w_id, tier, write_root):
         }
         if cache == "warm":
             os_cache["warmup"] = True
+        input_data = {
+            "root_file": f"{root}/{variant}/{root_file_for(variant)}",
+            "manifest_file": f"{root}/manifest.json",
+        }
+        if products:
+            input_data["products"] = products
         cases.append(
             {
                 "enabled": True,
@@ -94,13 +104,11 @@ def emit_benchmark(ds_id, w_id, tier, write_root):
                     "description": (
                         f"{variant} layout, {ap_label} access, {cache} cache, "
                         f"cluster_cache={cc}, implicit_mt={imt}"
+                        + (f", products={'+'.join(products)}" if products else "")
                     ),
                     "variant": variant,
                 },
-                "input_data": {
-                    "root_file": f"{root}/{variant}/{root_file_for(variant)}",
-                    "manifest_file": f"{root}/manifest.json",
-                },
+                "input_data": input_data,
                 "num_events": r["num_events"],
                 "access_pattern": ap,
                 "scatter_distance": dist,

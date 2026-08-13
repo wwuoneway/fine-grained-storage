@@ -15,6 +15,7 @@ from .data import (
     METRICS,
     distinct,
     read_summary,
+    container_summary,
     run_cluster_page_summary,
     run_generation_summary,
     run_max_page_size,
@@ -91,7 +92,7 @@ def main() -> None:
     max_page_size = run_max_page_size(run_dir)
     png = plot_bottleneck_breakdown(rows, args.rows, args.cols, facet_axes, plots_dir, num_events,
                                     payload_mib, cluster_page_summary, generation_summary,
-                                    max_page_size)
+                                    max_page_size, container_summary(rows))
     if png:
         print(f"  {'bottleneck_breakdown':24} -> {png.relative_to(out_base)}")
     else:

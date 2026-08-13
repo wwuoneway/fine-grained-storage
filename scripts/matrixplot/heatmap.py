@@ -4,7 +4,7 @@ import math
 
 import matplotlib.pyplot as plt
 
-from .data import METRICS, distinct, fmt
+from .data import METRICS, container_summary, distinct, fmt
 from .grid import panel_grid
 from .pivot import pivot, write_pivot_csv
 
@@ -62,8 +62,11 @@ def make_metric(rows, metric, row_axis, col_axis, facet_axes, plots_dir, csv_dir
     if not render:
         return None, n
 
+    containers = container_summary(rows)
+
     fig, axes = panel_grid(n, panel_w=4.6, panel_h=3.6)
-    fig.subplots_adjust(wspace=0.35, hspace=0.55)
+    # The second title line needs its own room, or it lands on the panel titles.
+    fig.subplots_adjust(wspace=0.35, hspace=0.55, top=0.80 if containers else 0.88)
     flat = [x for grid in grids for row in grid for x in row if not math.isnan(x)]
     vmin, vmax = (min(flat), max(flat)) if flat else (0.0, 1.0)
 
@@ -82,10 +85,11 @@ def make_metric(rows, metric, row_axis, col_axis, facet_axes, plots_dir, csv_dir
 
     if last_im is not None:
         fig.colorbar(last_im, ax=axes, shrink=0.7, label=spec.label)
-    fig.suptitle(
-        f"{spec.label}  ({spec.direction})   [num_events={num_events}]   "
-        f"rows={row_axis} x cols={col_axis}"
-    )
+    title = (f"{spec.label}  ({spec.direction})   [num_events={num_events}]   "
+             f"rows={row_axis} x cols={col_axis}")
+    if containers:
+        title += f"\n{containers}"
+    fig.suptitle(title)
     png = plots_dir / f"{spec.slug}.png"
     fig.savefig(png)
     plt.close(fig)

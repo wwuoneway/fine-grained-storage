@@ -52,12 +52,14 @@ namespace fgs::bench {
     void print_benchmark_header(std::ostream& log,
                                 BenchmarkCase const& bench,
                                 fs::path const& root_path,
-                                std::uint64_t n_events_used)
+                                std::uint64_t n_events_used,
+                                std::string const& containers)
     {
       std::ostringstream os;
       os << "\n=== " << bench.name << " ===\n"
          << "variant         : " << bench.variant << "\n"
          << "root file       : " << root_path << "\n"
+         << "containers      : " << containers << "\n"
          << "access_pattern  : " << bench.access_pattern << "\n"
          << "scatter_distance: " << bench.scatter_distance << "\n"
          << "events config   : " << bench.num_events << "\n"
@@ -77,7 +79,7 @@ namespace fgs::bench {
                           bool instrument = false)
     {
       ROOT::RNTupleReadOptions opts = make_read_options(bench);
-      fgs::EventReader reader(root_path, index_name, opts);
+      fgs::EventReader reader(root_path, index_name, opts, bench.products);
       reader.set_instrument(instrument);
 
       Measurement m;
@@ -150,11 +152,17 @@ namespace fgs::bench {
     std::uint64_t const n_events = [&] {
       ROOT::RNTupleReadOptions probe_opts;
       probe_opts.SetClusterCache(ROOT::RNTupleReadOptions::EClusterCache::kOff);
-      fgs::EventReader probe(root_path, index_name, probe_opts);
+      fgs::EventReader probe(root_path, index_name, probe_opts, bench.products);
       for (auto const& [name, facts] : probe.dataset_facts())
         dataset_facts[name] = {facts.clusters, facts.pages};
       return std::min(bench.num_events, probe.num_events());
     }();
+
+    // dataset_facts is keyed by the containers the reader opened, which is
+    // exactly the selection.
+    std::string containers;
+    for (auto const& [name, facts] : dataset_facts)
+      containers += containers.empty() ? name : "|" + name;
 
     // One self-contained folder per benchmark, under the run's benchmarks/ dir.
     fs::path const bench_dir =
@@ -182,6 +190,7 @@ namespace fgs::bench {
                                cache_state_name(bench.cache_state),
                                bench.cluster_cache,
                                bench.implicit_mt,
+                               containers,
                                n_events,
                                bench.repetitions,
                                bench.root_file.string(),
@@ -194,7 +203,7 @@ namespace fgs::bench {
     fgs::bench::write_benchmark_metadata(bench_dir / "metadata.txt", id, dataset_facts);
 
     std::ofstream log(bench_dir / "benchmark.log");
-    print_benchmark_header(log, bench, root_path, n_events);
+    print_benchmark_header(log, bench, root_path, n_events, containers);
 
     std::vector<Measurement> reps;
     reps.reserve(bench.repetitions);

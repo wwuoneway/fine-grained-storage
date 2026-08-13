@@ -321,7 +321,7 @@ namespace fgs::bench {
   char const* summary_header()
   {
     return "benchmark_num,benchmark,variant,access_pattern,scatter_distance,stride,cache_state,"
-           "cluster_cache,implicit_mt,"
+           "cluster_cache,implicit_mt,containers,"
            "num_events,reps,wall_s_mean,wall_s_min,latency_us_mean,latency_us_min,"
            "throughput_evt_s_mean,"
            "read_wall_ms,unzip_wall_ms,read_payload_mib,n_read,read_efficiency,"
@@ -338,7 +338,7 @@ namespace fgs::bench {
       throw std::runtime_error("cannot write CSV: " + path.string());
 
     csv << "benchmark_num,benchmark,variant,access_pattern,scatter_distance,stride,cache_state,"
-           "cluster_cache,implicit_mt,"
+           "cluster_cache,implicit_mt,containers,"
            "num_events,repetition,wall_s,latency_us_per_event,throughput_evt_s,total_values,"
            "read_wall_ms,unzip_wall_ms,read_payload_mib,n_read,read_efficiency,"
            "n_page_read,n_page_unsealed,n_cluster_loaded,"
@@ -347,7 +347,8 @@ namespace fgs::bench {
       csv << id.num << ',' << csv_field(id.name) << ',' << csv_field(id.variant) << ','
           << csv_field(id.access_pattern) << ',' << id.scatter_distance << ',' << id.stride << ','
           << csv_field(id.cache_state) << ','
-          << csv_field(id.cluster_cache) << ',' << csv_field(id.implicit_mt) << ',' << id.num_events
+          << csv_field(id.cluster_cache) << ',' << csv_field(id.implicit_mt) << ','
+          << csv_field(id.containers) << ',' << id.num_events
           << ',' << m.repetition << ',' << m.wall_s << ',' << m.latency_us_per_event << ','
           << m.throughput_evt_s << ',' << m.total_values << ','
           << m.counters.read_wall_ms << ',' << m.counters.unzip_wall_ms << ','
@@ -367,7 +368,8 @@ namespace fgs::bench {
     csv << id.num << ',' << csv_field(id.name) << ',' << csv_field(id.variant) << ','
         << csv_field(id.access_pattern) << ',' << id.scatter_distance << ',' << id.stride << ','
         << csv_field(id.cache_state) << ','
-        << csv_field(id.cluster_cache) << ',' << csv_field(id.implicit_mt) << ',' << id.num_events
+        << csv_field(id.cluster_cache) << ',' << csv_field(id.implicit_mt) << ','
+        << csv_field(id.containers) << ',' << id.num_events
         << ',' << a.reps << ',' << a.wall_mean << ',' << a.wall_min << ',' << a.lat_mean << ','
         << a.lat_min << ',' << a.thr_mean << ','
         << a.read_ms_mean << ',' << a.unzip_ms_mean << ',' << a.payload_mib_mean << ','
@@ -396,6 +398,7 @@ namespace fgs::bench {
         << " max=" << id.scatter_max_displacement << '\n'
         << "cache_state    : " << id.cache_state << '\n'
         << "cluster_cache  : " << id.cluster_cache << '\n'
+        << "containers     : " << id.containers << '\n'
         << "num_events     : " << id.num_events << '\n'
         << "repetitions    : " << id.repetitions << '\n'
         << "root_file      : " << id.root_file << '\n'

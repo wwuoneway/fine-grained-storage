@@ -37,7 +37,7 @@ def write_page_metrics_md(run_dir: Path) -> Path | None:
         ]
 
     if facts:
-        lines += ["## Dataset facts (fixed per file, not benchmark-dependent)", ""]
+        lines += ["## Dataset facts (fixed per container, for the containers read)", ""]
         multi_file = len({rf for _, rf in facts}) > 1
         if multi_file:
             lines.append("| container | root_file | clusters | on-disk pages |")

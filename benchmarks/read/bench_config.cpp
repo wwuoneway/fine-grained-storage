@@ -3,6 +3,7 @@
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
@@ -75,6 +76,7 @@ namespace fgs::bench {
     auto const& input = j.at("input_data");
     bench.root_file = input.at("root_file").get<std::string>();
     bench.manifest_file = input.at("manifest_file").get<std::string>();
+    bench.products = input.value("products", std::vector<std::string>{});
 
     bench.num_events = j.at("num_events").get<std::uint64_t>();
     bench.access_pattern = j.value("access_pattern", "sequential");

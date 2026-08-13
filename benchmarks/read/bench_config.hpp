@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <string>
+#include <vector>
 
 #include <ROOT/RNTupleReadOptions.hxx>
 #include <nlohmann/json_fwd.hpp>
@@ -24,6 +25,7 @@ namespace fgs::bench {
     std::string variant;
     std::filesystem::path root_file;
     std::filesystem::path manifest_file;
+    std::vector<std::string> products; // empty = all
     std::uint64_t num_events = 0;
     std::string access_pattern = "sequential";
     std::uint64_t access_seed = 1234; // random-pattern permutation seed

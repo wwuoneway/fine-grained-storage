@@ -16,9 +16,8 @@ from .data import METRICS, container_summary, run_generation_summary, run_max_pa
 
 MARKERS = ["o", "s", "^", "D", "v", "P", "X"]
 
-# (access_pattern value, x label) for the two swept knobs.
-KNOBS = [("strided", "stride (events per hop)"),
-         ("scatter", "scatter distance (events)")]
+# (access_pattern value, x label) for the swept knob.
+KNOBS = [("scatter", "scatter distance (events)")]
 
 
 def _palette():
@@ -43,8 +42,8 @@ def _series(run_dirs):
                 if not vals:
                     continue
                 pattern = r["access_pattern"]
-                key = r.get("stride") if pattern == "strided" else r.get("scatter_distance")
-                x = float(key) if pattern in ("strided", "scatter") else 0.0
+                key = r.get("scatter_distance")
+                x = float(key) if pattern == "scatter" else 0.0
                 bucket.setdefault(pattern, {})[x] = vals
     return out
 
@@ -108,7 +107,7 @@ def _plot_sweep(ax, series, xlabel, pattern, metric):
     if not drew:
         return False
     # Linear: a swept axis is whatever values the config listed, and they need
-    # not be geometric (strides 2,4,8,16 are, distances 2,4,8,10 are not).
+    # not be geometric (distances 2,4,8,10 are not).
     ticks = sorted(seen_x)
     ax.set_xticks(ticks)
     ax.xaxis.set_minor_locator(matplotlib.ticker.NullLocator())
@@ -187,7 +186,7 @@ def _label_ends(ax, ends, x_right):
 
 
 def _one_metric(series, metric, out_path, conditions=""):
-    """seq | strided | scatter | rand, sharing y."""
+    """seq | scatter | rand, sharing y."""
     spec = METRICS[metric]
     fig, axes = plt.subplots(
         1, len(KNOBS) + 2, sharey=True, squeeze=False,

@@ -186,7 +186,7 @@ plot_dataset() {
     "$PLOT_PY" scripts/compare_matrix.py "$run_dir"
   done
   "$PLOT_PY" scripts/locality_curves.py --outdir "$dataset_dir" "${run_dirs[@]}" \
-    || info "locality curves skipped for $ds (no swept stride/scatter)"
+    || info "locality curves skipped for $ds (no swept scatter)"
 }
 
 process_dataset() {

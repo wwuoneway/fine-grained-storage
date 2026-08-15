@@ -1,9 +1,5 @@
 {
-  "_comment": "Fixed-size events (262144 particles/event, 500 events, no-shuffle only) swept across RNTuple's MaxUnzippedPageSize (1/10/20/30 MiB) to isolate page-size effects from event-size or shuffle effects. Reading is cold-cache only, all three access patterns.",
-  "output_roots": {
-    "generation": "output/generation/study",
-    "writing": "output/writing/study"
-  },
+  "_comment": "Fixed-size events (262144 particles/event, 500 events, no-shuffle only) swept across RNTuple's MaxUnzippedPageSize (1/10/20/30 MiB) to isolate page-size effects from event-size or shuffle effects. Reading is cold-cache only, both access patterns.",
   "defaults": {
     "generation": {
       "seed": 42,
@@ -16,27 +12,20 @@
       "momentum": { "mean": 0.0, "stddev": 1.0, "min_magnitude": 0.05 }
     }
   },
-  "tiers": {
-    "smoke": {
-      "generation": {
-        "num_events": [500],
-        "particles": [{ "min": 262144, "max": 262144 }]
-      },
-      "writing": {
-        "variants": ["no-shuffle"],
-        "max_page_size_mib": [1, 10, 20, 30]
-      },
-      "reading": {
-        "access_pattern": ["sequential", "random", "strided"],
-        "stride": 5,
-        "access_seed": 1234,
-        "cache": ["cold"],
-        "cluster_cache": ["off"],
-        "implicit_mt": ["off"],
-        "num_events": 500,
-        "repetitions": 2
-      }
-    }
+  "generation": [
+    { "num_events": 500, "particles": { "min": 262144, "max": 262144 } }
+  ],
+  "writing": {
+    "variants": ["no-shuffle"],
+    "max_page_size_mib": [1, 10, 20, 30]
+  },
+  "reading": {
+    "access_pattern": ["sequential", "random"],
+    "access_seed": 1234,
+    "cache": ["cold"],
+    "cluster_cache": ["off"],
+    "implicit_mt": ["off"],
+    "num_events": 500,
+    "repetitions": 2
   }
 }
-

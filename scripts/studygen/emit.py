@@ -78,27 +78,20 @@ def emit_benchmark(ds_id, w_id, axes):
     # One selection for every case, not a crossed axis.
     products = r.get("products")
 
-    # Distance and stride are each read by one pattern only, so crossing them with
-    # all patterns would emit identical copies of the ones that ignore them.
+    # Distance is read by scatter only, so crossing it with all patterns would
+    # emit identical copies of the ones that ignore it.
     pattern_params = []
     for ap in r["access_pattern"]:
         if ap == "scatter":
-            pattern_params += [(ap, d, 0) for d in as_list("scatter_distance", 1)]
-        elif ap == "strided":
-            pattern_params += [(ap, 0, s) for s in as_list("stride", 16)]
+            pattern_params += [(ap, d) for d in as_list("scatter_distance", 1)]
         else:
-            pattern_params.append((ap, 0, 0))
+            pattern_params.append((ap, 0))
 
-    for variant, (ap, dist, stride), cache, cc, imt in itertools.product(
+    for variant, (ap, dist), cache, cc, imt in itertools.product(
         variants, pattern_params, r["cache"], r["cluster_cache"], r["implicit_mt"]
     ):
         k += 1
-        if ap == "scatter":
-            ap_label = f"scatter-{dist}"
-        elif ap == "strided":
-            ap_label = f"strided-{stride}"
-        else:
-            ap_label = ap
+        ap_label = f"scatter-{dist}" if ap == "scatter" else ap
         os_cache = {
             "state": cache,
             "evict_method": "posix_fadvise" if cache == "cold" else "none",
@@ -129,7 +122,6 @@ def emit_benchmark(ds_id, w_id, axes):
                 "access_pattern": ap,
                 "scatter_distance": dist,
                 "scatter_seed": r.get("scatter_seed", 1234),
-                "stride": stride,
                 "access_seed": r.get("access_seed", 1234),
                 "repetitions": r["repetitions"],
                 "os_cache": os_cache,

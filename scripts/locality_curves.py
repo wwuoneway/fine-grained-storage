@@ -21,7 +21,7 @@ def main() -> None:
 
     pngs = plot_locality_curves(args.run_dirs, args.outdir)
     if not pngs:
-        raise SystemExit("no locality data (need max page size metadata + swept stride/scatter)")
+        raise SystemExit("no locality data (need max page size metadata + swept scatter)")
     for png in pngs:
         print(f"locality curves -> {png}")
 

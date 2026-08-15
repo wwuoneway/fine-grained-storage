@@ -51,8 +51,6 @@ def read_summary(path: Path) -> list[dict]:
     for r in rows:
         if r.get("access_pattern") == "scatter":
             r["access_pattern"] = f"scatter-{r.get('scatter_distance', '?')}"
-        elif r.get("access_pattern") == "strided" and "stride" in r:
-            r["access_pattern"] = f"strided-{r['stride']}"
     return rows
 
 

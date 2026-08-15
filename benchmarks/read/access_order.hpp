@@ -1,13 +1,9 @@
 #pragma once
 
 // Event-id visitation order for the read benchmark. A small polymorphic
-// generator so the access pattern (sequential / random / strided / scatter) is
-// a single, testable responsibility, advanced one id at a time inside the read
-// loop.
-//
-// Sequential and strided compute ids on the fly (no storage); random and
-// scatter materialize a permutation. This keeps large-N runs (e.g. 2e7 events)
-// allocation-free unless one of those two is explicitly requested.
+// generator, advanced one id at a time inside the read loop, so large-N runs
+// (e.g. 2e7 events) stay allocation-free unless the pattern requires a
+// materialized permutation.
 
 #include <cstdint>
 #include <memory>
@@ -35,19 +31,11 @@ namespace fgs::bench {
     std::string pattern = "sequential";
     std::uint64_t n = 0;
     std::uint64_t seed = 1234; // random pattern
-    std::uint64_t stride = 16; // strided pattern
     std::uint64_t scatter_distance = 1;
     std::uint64_t scatter_seed = 1234; // scatter pattern
   };
 
-  // Build the generator for a pattern. Throws on an unknown pattern, and for
-  // the strided pattern on stride == 0 or stride >= n (which would degenerate
-  // to a sequential order).
-  //   sequential : 0,1,...,n-1          (best-case locality)
-  //   random     : Fisher-Yates shuffle (mt19937_64 seeded by `seed`)
-  //   strided    : hop by `stride`       (full permutation)
-  //   scatter    : near-sequential, each position swapped with one at most
-  //                `scatter_distance` away (mt19937_64 seeded by `scatter_seed`)
+  // Build the generator for a pattern. Throws on an unknown pattern.
   std::unique_ptr<EventOrder> make_event_order(OrderSpec const& spec);
 
 }

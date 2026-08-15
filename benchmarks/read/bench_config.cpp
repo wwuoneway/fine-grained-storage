@@ -81,7 +81,6 @@ namespace fgs::bench {
     bench.num_events = j.at("num_events").get<std::uint64_t>();
     bench.access_pattern = j.value("access_pattern", "sequential");
     bench.access_seed = j.value("access_seed", std::uint64_t{1234});
-    bench.stride = j.value("stride", std::uint64_t{16});
     bench.scatter_distance = j.value("scatter_distance", std::uint64_t{1});
     bench.scatter_seed = j.value("scatter_seed", std::uint64_t{1234});
     bench.repetitions = j.value("repetitions", std::uint64_t{1});
@@ -100,12 +99,9 @@ namespace fgs::bench {
     if (bench.repetitions == 0)
       throw std::runtime_error("benchmark \"" + bench.name + "\" has repetitions=0");
     if (bench.access_pattern != "sequential" && bench.access_pattern != "random" &&
-        bench.access_pattern != "strided" && bench.access_pattern != "scatter")
+        bench.access_pattern != "scatter")
       throw std::runtime_error("benchmark \"" + bench.name + "\" has unknown access_pattern \"" +
                                bench.access_pattern + "\"");
-    // Cases that are not strided carry stride 0 to mark the value unused.
-    if (bench.access_pattern == "strided" && bench.stride == 0)
-      throw std::runtime_error("benchmark \"" + bench.name + "\" has stride=0");
     // Clamping the swap target into [0, n-1] piles roughly distance/(2*num_events)
     // of the rolls onto the two end indices, so a large distance distorts the
     // order instead of scattering it. Distance 0 is the identity baseline.

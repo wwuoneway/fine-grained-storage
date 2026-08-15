@@ -36,7 +36,6 @@ namespace fgs::bench {
       return {bench.access_pattern,
               n_events,
               bench.access_seed,
-              bench.stride,
               bench.scatter_distance,
               bench.scatter_seed};
     }
@@ -86,8 +85,7 @@ namespace fgs::bench {
       m.repetition = repetition;
 
       // Build the visitation order before the timer so ordering cost never enters
-      // the measured region. Sequential/strided are allocation-free; random and
-      // scatter materialize a permutation (see access_order.hpp).
+      // the measured region (see access_order.hpp).
       std::unique_ptr<EventOrder> order = make_event_order(order_spec(bench, n_events));
 
       // Cheap dead-code-elimination sink: counting the values read keeps `values`
@@ -178,7 +176,6 @@ namespace fgs::bench {
     OrderStats const scatter_stats =
       is_scatter ? make_event_order(order_spec(bench, n_events))->stats() : OrderStats{};
     std::uint64_t const scatter_distance = is_scatter ? bench.scatter_distance : 0;
-    std::uint64_t const stride = bench.access_pattern == "strided" ? bench.stride : 0;
 
     fgs::bench::BenchmarkId id{bench.benchmark_num,
                                bench.name,
@@ -186,7 +183,6 @@ namespace fgs::bench {
                                bench.variant,
                                bench.access_pattern,
                                scatter_distance,
-                               stride,
                                cache_state_name(bench.cache_state),
                                bench.cluster_cache,
                                bench.implicit_mt,

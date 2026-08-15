@@ -74,7 +74,6 @@ namespace fgs::bench {
     std::string variant;
     std::string access_pattern;
     std::uint64_t scatter_distance = 0;
-    std::uint64_t stride = 0;
     std::string cache_state;
     std::string cluster_cache;
     std::string implicit_mt;

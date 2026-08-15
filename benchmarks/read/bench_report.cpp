@@ -320,7 +320,7 @@ namespace fgs::bench {
 
   char const* summary_header()
   {
-    return "benchmark_num,benchmark,variant,access_pattern,scatter_distance,stride,cache_state,"
+    return "benchmark_num,benchmark,variant,access_pattern,scatter_distance,cache_state,"
            "cluster_cache,implicit_mt,containers,"
            "num_events,reps,wall_s_mean,wall_s_min,latency_us_mean,latency_us_min,"
            "throughput_evt_s_mean,"
@@ -337,7 +337,7 @@ namespace fgs::bench {
     if (!csv)
       throw std::runtime_error("cannot write CSV: " + path.string());
 
-    csv << "benchmark_num,benchmark,variant,access_pattern,scatter_distance,stride,cache_state,"
+    csv << "benchmark_num,benchmark,variant,access_pattern,scatter_distance,cache_state,"
            "cluster_cache,implicit_mt,containers,"
            "num_events,repetition,wall_s,latency_us_per_event,throughput_evt_s,total_values,"
            "read_wall_ms,unzip_wall_ms,read_payload_mib,n_read,read_efficiency,"
@@ -345,7 +345,7 @@ namespace fgs::bench {
            "locate_ms,load_ms,fill_ms,wall_instr_ms,read_wall_instr_ms,unzip_wall_instr_ms\n";
     for (Measurement const& m : reps)
       csv << id.num << ',' << csv_field(id.name) << ',' << csv_field(id.variant) << ','
-          << csv_field(id.access_pattern) << ',' << id.scatter_distance << ',' << id.stride << ','
+          << csv_field(id.access_pattern) << ',' << id.scatter_distance << ','
           << csv_field(id.cache_state) << ','
           << csv_field(id.cluster_cache) << ',' << csv_field(id.implicit_mt) << ','
           << csv_field(id.containers) << ',' << id.num_events
@@ -366,7 +366,7 @@ namespace fgs::bench {
   {
     Aggregates const a = aggregate(reps);
     csv << id.num << ',' << csv_field(id.name) << ',' << csv_field(id.variant) << ','
-        << csv_field(id.access_pattern) << ',' << id.scatter_distance << ',' << id.stride << ','
+        << csv_field(id.access_pattern) << ',' << id.scatter_distance << ','
         << csv_field(id.cache_state) << ','
         << csv_field(id.cluster_cache) << ',' << csv_field(id.implicit_mt) << ','
         << csv_field(id.containers) << ',' << id.num_events
@@ -392,7 +392,6 @@ namespace fgs::bench {
         << "variant        : " << id.variant << '\n'
         << "access_pattern : " << id.access_pattern << '\n'
         << "scatter_dist   : " << id.scatter_distance << '\n'
-        << "stride         : " << id.stride << '\n'
         << "scatter_seed   : " << id.scatter_seed << '\n'
         << "scatter_disp   : mean=" << id.scatter_mean_displacement
         << " max=" << id.scatter_max_displacement << '\n'

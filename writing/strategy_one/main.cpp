@@ -89,9 +89,6 @@ namespace {
     fs::path output_root;
     std::vector<std::string> variants;
     std::uint64_t shuffle_seed = 0;
-    // Kept alongside the ROOT object below because run_study_all.sh diffs this
-    // block against the config to decide whether a rewrite is needed, and
-    // recovering MiB from ROOT's rounded byte count would not survive that.
     json write_options_json = json::object();
     ROOT::RNTupleWriteOptions write_options;
   };

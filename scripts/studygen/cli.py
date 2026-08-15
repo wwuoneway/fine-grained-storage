@@ -1,51 +1,64 @@
-"""CLI: emit all study configs from axes.json, or --list a tier's combos.
+"""CLI: emit the study configs from an axes file, or list what it expands to.
 
-  studygen                     emit configs for every tier in axes.json
-  studygen --axes FILE         use a different axes file
-  studygen --list [TIER]       print the combo TSV run_study_all.sh consumes
+All three modes take --axes and --sweep; run_study_all.sh is the only caller.
+
+  studygen --axes FILE --sweep DIR                  emit the configs
+  studygen --axes FILE --sweep DIR --list           one TSV row per combo
+  studygen --axes FILE --sweep DIR --list-datasets  one TSV row per dataset
 """
 import json
 import pathlib
 import sys
 
-from .emit import REPO, emit_benchmark, emit_generation, emit_writing, list_combos
+from .emit import (
+    emit_benchmark,
+    emit_generation,
+    emit_writing,
+    list_combos,
+    list_datasets,
+)
 from .expand import datasets, write_opts
-
-AXES_PATH = REPO / "configs" / "study" / "axes.json"  # default; override with --axes
 
 
 def main() -> int:
     args = sys.argv[1:]
-    axes_path = AXES_PATH
-    if args and args[0] == "--axes":
-        axes_path = pathlib.Path(args[1]).resolve()
-        args = args[2:]
+    axes_path = None
+    sweep = None
+    mode = None
+    while args:
+        arg = args.pop(0)
+        if arg == "--axes":
+            axes_path = pathlib.Path(args.pop(0)).resolve()
+        elif arg == "--sweep":
+            sweep = args.pop(0)
+        elif arg in ("--list", "--list-datasets"):
+            mode = arg
+        else:
+            print(f"studygen: unknown argument '{arg}'", file=sys.stderr)
+            return 2
+
+    if axes_path is None or sweep is None:
+        print("studygen: --axes FILE and --sweep DIR are both required", file=sys.stderr)
+        return 2
 
     axes = json.loads(axes_path.read_text())
+    try:
+        return run(axes, sweep, mode)
+    except ValueError as err:
+        print(f"studygen: {err}", file=sys.stderr)
+        return 2
 
-    if args and args[0] == "--list":
-        tier_filter = args[1] if len(args) > 1 else None
-        return list_combos(axes, tier_filter)
 
-    gen_root = axes["output_roots"]["generation"]
-    write_root = axes["output_roots"]["writing"]
+def run(axes, sweep, mode) -> int:
+    if mode == "--list-datasets":
+        return list_datasets(axes, sweep)
+    if mode == "--list":
+        return list_combos(axes, sweep)
+
     defaults = axes.get("defaults", {})
-
-    produced = []
-    for tier_name, tier in axes["tiers"].items():
-        for ds_id, n, parts in datasets(tier):
-            gpath = emit_generation(ds_id, n, parts, defaults, gen_root)
-            produced.append(("generation", tier_name, gpath, ""))
-            for w_id, w_opts in write_opts(tier):
-                wpath = emit_writing(ds_id, w_id, w_opts, tier, gen_root, write_root)
-                produced.append(("writing", tier_name, wpath, ""))
-                bpath, nrows = emit_benchmark(ds_id, w_id, tier, write_root)
-                produced.append(("benchmark", tier_name, bpath, f"{nrows} rows"))
-
-    print(f"axes: {axes_path.relative_to(REPO)}")
-    print(f"emitted {len(produced)} config file(s):\n")
-    for kind, tier_name, path, note in produced:
-        rel = path.relative_to(REPO)
-        suffix = f"  ({note})" if note else ""
-        print(f"  [{tier_name:5}] {kind:10} {rel}{suffix}")
+    for ds_id, n, parts in datasets(axes):
+        emit_generation(ds_id, n, parts, defaults)
+        for w_id, w_opts in write_opts(axes):
+            emit_writing(ds_id, w_id, w_opts, axes)
+            emit_benchmark(ds_id, w_id, axes)
     return 0

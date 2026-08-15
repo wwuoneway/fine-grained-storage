@@ -11,59 +11,75 @@ GEN_DIR = REPO / "configs" / "generation" / "auto-generated"
 WRITE_DIR = REPO / "configs" / "writing" / "auto-generated"
 BENCH_DIR = REPO / "configs" / "benchmarks" / "auto-generated"
 
+# Generated inputs and written files are keyed by content, not by sweep, so a
+# re-run can skip rebuilding them.
+GEN_ROOT = "output/generation/study"
+WRITE_ROOT = "output/writing/study"
+
 
 def write_json(path: pathlib.Path, obj) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(obj, indent=2) + "\n")
 
 
-def emit_generation(ds_id, n, parts, defaults, gen_root):
+def gen_dir(ds_id):
+    return f"{GEN_ROOT}/{ds_id}"
+
+
+def write_dir(ds_id, w_id):
+    return f"{WRITE_ROOT}/{ds_id}/{w_id}"
+
+
+def dataset_dir(sweep, ds_id):
+    return f"{sweep}/{ds_id}"
+
+
+def run_dir(sweep, ds_id, w_id):
+    return f"{dataset_dir(sweep, ds_id)}/{ds_id}__{w_id}"
+
+
+def emit_generation(ds_id, n, parts, defaults):
     """Full generation config (config.cpp requires every field)."""
     gd = defaults.get("generation", {})
     cfg = {
         "num_events": n,
         "particles": {"min": parts["min"], "max": parts["max"]},
         "seed": gd.get("seed", 42),
-        "output_dir": f"{gen_root}/{ds_id}",
+        "output_dir": gen_dir(ds_id),
         "position": gd["position"],
         "momentum": gd["momentum"],
     }
-    path = GEN_DIR / f"{ds_id}.json"
-    write_json(path, cfg)
-    return path
+    write_json(GEN_DIR / f"{ds_id}.json", cfg)
 
 
-def emit_writing(ds_id, w_id, w_opts, tier, gen_root, write_root):
+def emit_writing(ds_id, w_id, w_opts, axes):
     cfg = {
-        "gen_dir": f"{gen_root}/{ds_id}",
-        "output_root": f"{write_root}/{ds_id}/{w_id}",
-        "variants": tier["writing"]["variants"],
-        "shuffle_seed": tier["writing"].get("shuffle_seed", 0),
+        "gen_dir": gen_dir(ds_id),
+        "output_root": write_dir(ds_id, w_id),
+        "variants": axes["writing"]["variants"],
+        "shuffle_seed": axes["writing"].get("shuffle_seed", 0),
     }
     if w_opts is not None:
         cfg["write_options"] = w_opts
-    path = WRITE_DIR / f"{ds_id}__{w_id}.json"
-    write_json(path, cfg)
-    return path
+    write_json(WRITE_DIR / f"{ds_id}__{w_id}.json", cfg)
 
 
-def emit_benchmark(ds_id, w_id, tier, write_root):
-    r = tier["reading"]
-    variants = tier["writing"]["variants"]
-    root = f"{write_root}/{ds_id}/{w_id}"
+def emit_benchmark(ds_id, w_id, axes):
+    r = axes["reading"]
+    variants = axes["writing"]["variants"]
+    root = write_dir(ds_id, w_id)
     cases = []
     k = 0
-    # Distance and stride are each read by one pattern only, so each is crossed
-    # with that pattern alone: a full cross would emit N identical copies of
-    # every pattern that ignores the value.
+
     def as_list(key, default):
         v = r.get(key, default)
         return v if isinstance(v, list) else [v]
 
-    # One selection for the whole run, not a crossed axis: it must not multiply
-    # the case count.
+    # One selection for every case, not a crossed axis.
     products = r.get("products")
 
+    # Distance and stride are each read by one pattern only, so crossing them with
+    # all patterns would emit identical copies of the ones that ignore them.
     pattern_params = []
     for ap in r["access_pattern"]:
         if ap == "scatter":
@@ -123,35 +139,37 @@ def emit_benchmark(ds_id, w_id, tier, write_root):
                 },
             }
         )
-    path = BENCH_DIR / f"{ds_id}__{w_id}.json"
-    write_json(path, {"benchmarks": cases})
-    return path, len(cases)
+    write_json(BENCH_DIR / f"{ds_id}__{w_id}.json", {"benchmarks": cases})
 
 
-def list_combos(axes, tier_filter) -> int:
+def list_datasets(axes, sweep) -> int:
+    """Print one TSV row per dataset, for run_study_all.sh to consume.
+
+    Columns: ds_id  gen_cfg  gen_dir  dataset_dir. No files are written.
+    """
+    for ds_id, _n, _parts in datasets(axes):
+        gen_cfg = f"configs/generation/auto-generated/{ds_id}.json"
+        print(f"{ds_id}\t{gen_cfg}\t{gen_dir(ds_id)}\t{dataset_dir(sweep, ds_id)}")
+    return 0
+
+
+def list_combos(axes, sweep) -> int:
     """Print one TSV row per (dataset, wopts) combo, for run_study_all.sh to consume.
 
-    Columns: ds_id  wopts_id  gen_cfg  write_cfg  bench_cfg  gen_out_dir  write_out_dir
-    All paths are relative to the repo root. No files are written.
+    Columns: ds_id  wopts_id  write_cfg  bench_cfg  write_dir  run_dir. No files are written.
     """
-    gen_root = axes["output_roots"]["generation"]
-    write_root = axes["output_roots"]["writing"]
-    for tier_name, tier in axes["tiers"].items():
-        if tier_filter and tier_name != tier_filter:
-            continue
-        for ds_id, _n, _parts in datasets(tier):
-            for w_id, _opts in write_opts(tier):
-                print(
-                    "\t".join(
-                        [
-                            ds_id,
-                            w_id,
-                            f"configs/generation/auto-generated/{ds_id}.json",
-                            f"configs/writing/auto-generated/{ds_id}__{w_id}.json",
-                            f"configs/benchmarks/auto-generated/{ds_id}__{w_id}.json",
-                            f"{gen_root}/{ds_id}",
-                            f"{write_root}/{ds_id}/{w_id}",
-                        ]
-                    )
+    for ds_id, _n, _parts in datasets(axes):
+        for w_id, _opts in write_opts(axes):
+            print(
+                "\t".join(
+                    [
+                        ds_id,
+                        w_id,
+                        f"configs/writing/auto-generated/{ds_id}__{w_id}.json",
+                        f"configs/benchmarks/auto-generated/{ds_id}__{w_id}.json",
+                        write_dir(ds_id, w_id),
+                        run_dir(sweep, ds_id, w_id),
+                    ]
                 )
+            )
     return 0

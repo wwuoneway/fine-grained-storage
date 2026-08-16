@@ -5,4 +5,4 @@ add_executable(fgs_read_bench
   access_order.cpp
   bench_runner.cpp
   bench_report.cpp)
-target_link_libraries(fgs_read_bench PRIVATE fgs_reading)
+target_link_libraries(fgs_read_bench PRIVATE fgs_reading nlohmann_json::nlohmann_json)

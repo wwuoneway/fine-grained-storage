@@ -1,10 +1,10 @@
 """Stacked-bar wall-time bottleneck breakdown.
 
 Coarse view: I/O / Decompress / Other, decomposing the clean-pass wall. When
-the sub-timers are present (locate_ms/load_ms/fill_ms plus wall_instr_ms),
-"Other" is split into Decode / Fill / Locate / Loop using the nested model:
+the sub-timers are present (locate_ms/load_ms plus wall_instr_ms),
+"Other" is split into Decode / Locate / Loop using the nested model:
 load = io + unzip + decode, so decode = load - io - unzip, and
-loop = wall_instr - locate - load - fill.
+loop = wall_instr - locate - load.
 
 The fine split decomposes wall_instr_ms (the instrumented pass's own wall)
 rather than the clean wall_s_mean: the sub-timers are nested inside that wall,
@@ -25,7 +25,6 @@ SEG_COLORS = {
     "I/O": "#4c72b0",
     "Decompress": "#dd8452",
     "Decode": "#55a868",
-    "Fill": "#8172b3",
     "Locate": "#937860",
     "Loop": "#8c8c8c",
     "Other": "#8c8c8c",
@@ -33,10 +32,10 @@ SEG_COLORS = {
 
 
 def _seg_names(rows):
-    fine = ("locate_ms", "load_ms", "fill_ms", "wall_instr_ms",
+    fine = ("locate_ms", "load_ms", "wall_instr_ms",
             "read_wall_instr_ms", "unzip_wall_instr_ms")
     if all(k in rows[0] for k in fine):
-        return ["I/O", "Decompress", "Decode", "Fill", "Locate", "Loop"]
+        return ["I/O", "Decompress", "Decode", "Locate", "Loop"]
     return ["I/O", "Decompress", "Other"]
 
 
@@ -55,11 +54,10 @@ def _segments(r, seg_names):
     wall_instr = float(r["wall_instr_ms"])
     load = float(r["load_ms"])
     locate = float(r["locate_ms"])
-    fill = float(r["fill_ms"])
     decode = max(0.0, load - io - unz)
-    loop = max(0.0, wall_instr - locate - load - fill)
+    loop = max(0.0, wall_instr - locate - load)
     return [("I/O", io), ("Decompress", unz), ("Decode", decode),
-            ("Fill", fill), ("Locate", locate), ("Loop", loop)]
+            ("Locate", locate), ("Loop", loop)]
 
 
 def _cell_segments(cell, seg_names):

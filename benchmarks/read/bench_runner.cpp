@@ -88,10 +88,9 @@ namespace fgs::bench {
       // the measured region (see access_order.hpp).
       std::unique_ptr<EventOrder> order = make_event_order(order_spec(bench, n_events));
 
-      // Cheap dead-code-elimination sink: counting the values read keeps `values`
-      // used so the optimizer can't drop the read loop, without adding arithmetic
-      // weight (a full-value checksum) to the timed region.
-      std::uint64_t total_values = 0;
+      // Records how much each pass actually decoded, so a short read shows up as a
+      // number rather than as a plausible-looking time.
+      std::uint64_t total_elements = 0;
 
       // Visit n_events events in the pattern's order (order->next() yields each id
       // in [0, n_events) exactly once), reading every product the file holds.
@@ -99,10 +98,8 @@ namespace fgs::bench {
       auto const start = std::chrono::steady_clock::now();
       for (std::uint64_t i = 0; i < n_events; ++i) {
         std::uint64_t const event_id = order->next();
-        for (std::string const& product : products) {
-          std::vector<float> values = reader.read_product(event_id, product);
-          total_values += values.size();
-        }
+        for (std::string const& product : products)
+          total_elements += reader.read_product(event_id, product);
       }
       auto const stop = std::chrono::steady_clock::now();
 
@@ -110,7 +107,7 @@ namespace fgs::bench {
       m.wall_s = std::chrono::duration<double>(stop - start).count();
       m.latency_us_per_event = m.wall_s / static_cast<double>(n_events) * 1.0e6;
       m.throughput_evt_s = m.wall_s > 0.0 ? static_cast<double>(n_events) / m.wall_s : 0.0;
-      m.total_values = total_values;
+      m.total_elements = total_elements;
 
       std::ostringstream raw;
       reader.print_metrics(raw);
@@ -120,7 +117,6 @@ namespace fgs::bench {
         auto const& st = reader.subtimers();
         m.locate_ms = st.locate_ns / 1e6;
         m.load_ms = st.load_ns / 1e6;
-        m.fill_ms = st.fill_ns / 1e6;
       }
 
       return m;
@@ -227,7 +223,6 @@ namespace fgs::bench {
         read_once(bench, root_path, index_name, n_events, rep, instr_metrics_raw, true);
       m.locate_ms = instr.locate_ms;
       m.load_ms = instr.load_ms;
-      m.fill_ms = instr.fill_ms;
       m.wall_instr_ms = instr.wall_s * 1000.0;
       ReadCounters const instr_counters = fgs::bench::parse_read_counters(instr_metrics_raw);
       m.read_wall_instr_ms = instr_counters.read_wall_ms;
@@ -236,7 +231,7 @@ namespace fgs::bench {
       std::ostringstream line;
       line << "rep " << rep << " wall_s=" << m.wall_s
            << " latency_us_per_event=" << m.latency_us_per_event
-           << " throughput_evt_s=" << m.throughput_evt_s << " values=" << m.total_values
+           << " throughput_evt_s=" << m.throughput_evt_s << " elements=" << m.total_elements
            << " read_ms=" << m.counters.read_wall_ms << " unzip_ms=" << m.counters.unzip_wall_ms
            << " n_read=" << m.counters.n_read << "\n\n";
       tee(log, line.str());

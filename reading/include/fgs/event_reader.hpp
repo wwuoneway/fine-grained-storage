@@ -3,13 +3,14 @@
 // EventReader: the read-side counterpart of the write strategies. Given a single
 // ROOT file, it reads that file's index TTree (event_id, index_value) to learn,
 // for each event, which container (RNTuple) and entry hold each product, then
-// returns a product's row as a flat float buffer.
+// reads a product's row.
 //
 // The reader is index-driven: it discovers the products and their containers
 // from the index itself, so it knows nothing about strategy layout, variants, or
 // the manifest. Picking the file (e.g. no-shuffle vs shuffle) is the caller's
 // job. The container's element type is discovered from its RNTuple descriptor.
 
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <iosfwd>
@@ -52,11 +53,10 @@ namespace fgs {
     std::vector<std::string> const& product_names() const { return product_names_; }
 
     // Splits the read loop's "Other" wall time (what RNTuple's read/unzip counters
-    // miss) into locate lookup, LoadEntry decode, and per-event vector fill. ns.
+    // miss) into locate lookup and LoadEntry decode. ns.
     struct SubTimers {
       double locate_ns = 0.0;
       double load_ns = 0.0;
-      double fill_ns = 0.0;
     };
 
     // Off by default so the timed pass pays no clock-read overhead; the runner
@@ -64,10 +64,10 @@ namespace fgs {
     void set_instrument(bool on) { instrument_ = on; }
     SubTimers const& subtimers() const { return timers_; }
 
-    // Read one product's row for `event_id` as a flat float buffer (3 floats per
-    // particle, in field order), via a whole-row LoadEntry. Empty if the event
-    // has no particles. Throws if the event or product is unknown.
-    std::vector<float> read_product(std::uint64_t event_id, std::string const& product);
+    // Read one product's row for `event_id` via a whole-row LoadEntry, leaving the
+    // values in the container's own buffer. Returns how many elements the row
+    // holds. Throws if the event or product is unknown.
+    std::size_t read_product(std::uint64_t event_id, std::string const& product);
 
     // Print ROOT's per-container performance counters (no-op unless metrics were
     // enabled in the read options). The stream overload writes to an arbitrary

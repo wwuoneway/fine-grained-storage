@@ -144,7 +144,7 @@ namespace fgs {
     return pit->second;
   }
 
-  std::vector<float> EventReader::read_product(std::uint64_t event_id, std::string const& product)
+  std::size_t EventReader::read_product(std::uint64_t event_id, std::string const& product)
   {
     using clock = std::chrono::steady_clock;
     auto const ns = [](auto d) { return std::chrono::duration<double, std::nano>(d).count(); };
@@ -160,26 +160,7 @@ namespace fgs {
     c.reader->LoadEntry(token.entry); // whole-row read: refreshes the bound vector
     if (instrument_) timers_.load_ns += ns(clock::now() - tl);
 
-    clock::time_point tf;
-    if (instrument_) tf = clock::now();
-    std::vector<float> out;
-    if (c.pos) {
-      out.reserve(c.pos->size() * 3);
-      for (Position const& p : *c.pos) {
-        out.push_back(p.x);
-        out.push_back(p.y);
-        out.push_back(p.z);
-      }
-    } else {
-      out.reserve(c.mom->size() * 3);
-      for (Momentum const& m : *c.mom) {
-        out.push_back(m.px);
-        out.push_back(m.py);
-        out.push_back(m.pz);
-      }
-    }
-    if (instrument_) timers_.fill_ns += ns(clock::now() - tf);
-    return out;
+    return c.pos ? c.pos->size() : c.mom->size();
   }
 
   std::map<std::string, EventReader::ContainerFacts> EventReader::dataset_facts() const

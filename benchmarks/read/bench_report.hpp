@@ -47,13 +47,12 @@ namespace fgs::bench {
     double wall_s = 0.0;
     double latency_us_per_event = 0.0;
     double throughput_evt_s = 0.0;
-    std::uint64_t total_values = 0;
+    std::uint64_t total_elements = 0;
     // ROOT RNTuple counters for this pass (only when metrics are enabled).
     ReadCounters counters;
     // "Other"-segment breakdown from the instrumented pass (ms).
     double locate_ms = 0.0;
     double load_ms = 0.0;
-    double fill_ms = 0.0;
     // Wall of the instrumented pass itself: the sub-timers are nested inside
     // this wall (not wall_s, which is a different execution), so residuals
     // against it stay non-negative.

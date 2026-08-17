@@ -51,7 +51,7 @@ namespace fgs::bench {
     void print_benchmark_header(std::ostream& log,
                                 BenchmarkCase const& bench,
                                 fs::path const& root_path,
-                                std::uint64_t n_events_used,
+                                std::uint64_t n_events_read,
                                 std::string const& containers)
     {
       std::ostringstream os;
@@ -61,8 +61,7 @@ namespace fgs::bench {
          << "containers      : " << containers << "\n"
          << "access_pattern  : " << bench.access_pattern << "\n"
          << "scatter_distance: " << bench.scatter_distance << "\n"
-         << "events config   : " << bench.num_events << "\n"
-         << "events used     : " << n_events_used << "\n"
+         << "events read     : " << n_events_read << "\n"
          << "repetitions     : " << bench.repetitions << "\n"
          << "os cache        : " << cache_state_name(bench.cache_state) << "\n"
          << "cluster cache   : " << bench.cluster_cache << "\n";

@@ -64,8 +64,11 @@ def emit_writing(ds_id, w_id, w_opts, axes):
     write_json(WRITE_DIR / f"{ds_id}__{w_id}.json", cfg)
 
 
-def emit_benchmark(ds_id, w_id, axes):
+def emit_benchmark(ds_id, w_id, axes, ds_events):
     r = axes["reading"]
+    # Datasets in one run can differ by orders of magnitude in length, so a
+    # missing reading.num_events means "read this dataset whole".
+    num_events = r.get("num_events", ds_events)
     variants = axes["writing"]["variants"]
     root = write_dir(ds_id, w_id)
     cases = []
@@ -118,7 +121,7 @@ def emit_benchmark(ds_id, w_id, axes):
                     "variant": variant,
                 },
                 "input_data": input_data,
-                "num_events": r["num_events"],
+                "num_events": num_events,
                 "access_pattern": ap,
                 "scatter_distance": dist,
                 "scatter_seed": r.get("scatter_seed", 1234),

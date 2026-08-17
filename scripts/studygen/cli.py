@@ -60,5 +60,5 @@ def run(axes, sweep, mode) -> int:
         emit_generation(ds_id, n, parts, defaults)
         for w_id, w_opts in write_opts(axes):
             emit_writing(ds_id, w_id, w_opts, axes)
-            emit_benchmark(ds_id, w_id, axes)
+            emit_benchmark(ds_id, w_id, axes, n)
     return 0

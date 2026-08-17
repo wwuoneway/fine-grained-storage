@@ -50,18 +50,6 @@ namespace fgs::bench {
     std::uint64_t total_elements = 0;
     // ROOT RNTuple counters for this pass (only when metrics are enabled).
     ReadCounters counters;
-    // "Other"-segment breakdown from the instrumented pass (ms).
-    double locate_ms = 0.0;
-    double load_ms = 0.0;
-    // Wall of the instrumented pass itself: the sub-timers are nested inside
-    // this wall (not wall_s, which is a different execution), so residuals
-    // against it stay non-negative.
-    double wall_instr_ms = 0.0;
-    // ROOT counters from the instrumented pass itself: the fine bottleneck
-    // split (decode = load - read - unzip) must subtract counters measured on
-    // the same execution as load_ms, not the clean pass's.
-    double read_wall_instr_ms = 0.0;
-    double unzip_wall_instr_ms = 0.0;
   };
 
   // A benchmark's identity and configuration, used across the CSV rows and the

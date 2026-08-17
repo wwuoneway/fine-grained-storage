@@ -118,9 +118,6 @@ namespace fgs::bench {
       double read_ms_mean = 0.0, unzip_ms_mean = 0.0, payload_mib_mean = 0.0;
       double n_read_mean = 0.0, read_eff_mean = 0.0;
       double n_page_read_mean = 0.0, n_page_unsealed_mean = 0.0, n_cluster_loaded_mean = 0.0;
-      double locate_ms_mean = 0.0, load_ms_mean = 0.0;
-      double wall_instr_ms_mean = 0.0;
-      double read_wall_instr_ms_mean = 0.0, unzip_wall_instr_ms_mean = 0.0;
     };
 
     Aggregates aggregate(std::vector<Measurement> const& reps)
@@ -129,9 +126,6 @@ namespace fgs::bench {
       double read_ms_sum = 0.0, unzip_ms_sum = 0.0, payload_sum = 0.0;
       double n_read_sum = 0.0, read_eff_sum = 0.0;
       double n_page_read_sum = 0.0, n_page_unsealed_sum = 0.0, n_cluster_loaded_sum = 0.0;
-      double locate_sum = 0.0, load_sum = 0.0;
-      double wall_instr_sum = 0.0;
-      double read_instr_sum = 0.0, unzip_instr_sum = 0.0;
       for (Measurement const& m : reps) {
         wall.push_back(m.wall_s);
         latency.push_back(m.latency_us_per_event);
@@ -143,11 +137,6 @@ namespace fgs::bench {
         n_page_read_sum += static_cast<double>(m.counters.n_page_read);
         n_page_unsealed_sum += static_cast<double>(m.counters.n_page_unsealed);
         n_cluster_loaded_sum += static_cast<double>(m.counters.n_cluster_loaded);
-        locate_sum += m.locate_ms;
-        load_sum += m.load_ms;
-        wall_instr_sum += m.wall_instr_ms;
-        read_instr_sum += m.read_wall_instr_ms;
-        unzip_instr_sum += m.unzip_wall_instr_ms;
       }
       auto const n = static_cast<double>(reps.size());
       double const wall_mean = std::accumulate(wall.begin(), wall.end(), 0.0) / n;
@@ -168,12 +157,7 @@ namespace fgs::bench {
               read_eff_sum / n,
               n_page_read_sum / n,
               n_page_unsealed_sum / n,
-              n_cluster_loaded_sum / n,
-              locate_sum / n,
-              load_sum / n,
-              wall_instr_sum / n,
-              read_instr_sum / n,
-              unzip_instr_sum / n};
+              n_cluster_loaded_sum / n};
     }
 
   }
@@ -323,8 +307,7 @@ namespace fgs::bench {
            "num_events,reps,wall_s_mean,wall_s_min,latency_us_mean,latency_us_min,"
            "throughput_evt_s_mean,"
            "read_wall_ms,unzip_wall_ms,read_payload_mib,n_read,read_efficiency,"
-           "n_page_read,n_page_unsealed,n_cluster_loaded,"
-           "locate_ms,load_ms,wall_instr_ms,read_wall_instr_ms,unzip_wall_instr_ms\n";
+           "n_page_read,n_page_unsealed,n_cluster_loaded\n";
   }
 
   void write_raw_csv(fs::path const& path,
@@ -339,8 +322,7 @@ namespace fgs::bench {
            "cluster_cache,implicit_mt,containers,"
            "num_events,repetition,wall_s,latency_us_per_event,throughput_evt_s,total_elements,"
            "read_wall_ms,unzip_wall_ms,read_payload_mib,n_read,read_efficiency,"
-           "n_page_read,n_page_unsealed,n_cluster_loaded,"
-           "locate_ms,load_ms,wall_instr_ms,read_wall_instr_ms,unzip_wall_instr_ms\n";
+           "n_page_read,n_page_unsealed,n_cluster_loaded\n";
     for (Measurement const& m : reps)
       csv << id.num << ',' << csv_field(id.name) << ',' << csv_field(id.variant) << ','
           << csv_field(id.access_pattern) << ',' << id.scatter_distance << ','
@@ -353,9 +335,7 @@ namespace fgs::bench {
           << m.counters.read_payload_mib << ',' << m.counters.n_read << ','
           << m.counters.read_efficiency << ','
           << m.counters.n_page_read << ',' << m.counters.n_page_unsealed << ','
-          << m.counters.n_cluster_loaded << ','
-          << m.locate_ms << ',' << m.load_ms << ',' << m.wall_instr_ms << ','
-          << m.read_wall_instr_ms << ',' << m.unzip_wall_instr_ms << '\n';
+          << m.counters.n_cluster_loaded << '\n';
   }
 
   void append_summary_row(std::ostream& csv,
@@ -372,10 +352,8 @@ namespace fgs::bench {
         << a.lat_min << ',' << a.thr_mean << ','
         << a.read_ms_mean << ',' << a.unzip_ms_mean << ',' << a.payload_mib_mean << ','
         << a.n_read_mean << ',' << a.read_eff_mean << ','
-        << a.n_page_read_mean << ',' << a.n_page_unsealed_mean << ',' << a.n_cluster_loaded_mean << ','
-        << a.locate_ms_mean << ',' << a.load_ms_mean << ','
-        << a.wall_instr_ms_mean << ',' << a.read_wall_instr_ms_mean << ','
-        << a.unzip_wall_instr_ms_mean << '\n';
+        << a.n_page_read_mean << ',' << a.n_page_unsealed_mean << ','
+        << a.n_cluster_loaded_mean << '\n';
   }
 
   void write_benchmark_metadata(fs::path const& path, BenchmarkId const& id,

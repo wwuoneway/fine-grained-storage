@@ -50,18 +50,6 @@ namespace fgs {
     // hard-coding which products a file holds.
     std::vector<std::string> const& product_names() const { return product_names_; }
 
-    // Splits the read loop's "Other" wall time (what RNTuple's read/unzip counters
-    // miss) into locate lookup and LoadEntry decode. ns.
-    struct SubTimers {
-      double locate_ns = 0.0;
-      double load_ns = 0.0;
-    };
-
-    // Off by default so the timed pass pays no clock-read overhead; the runner
-    // flips it on for a separate instrumented pass.
-    void set_instrument(bool on) { instrument_ = on; }
-    SubTimers const& subtimers() const { return timers_; }
-
     // Read one product's row for `event_id` via a whole-row LoadEntry, leaving the
     // values in the container's own buffer. Returns how many elements the row
     // holds. Throws if the event or product is unknown.
@@ -104,9 +92,6 @@ namespace fgs {
     // O(1) lookup in the in-memory index built once in the constructor.
     // Throws if event_id or product was not present in the index.
     Location locate(std::uint64_t event_id, std::string const& product) const;
-
-    bool instrument_ = false;
-    SubTimers timers_;
 
     std::filesystem::path root_file_;
     ROOT::RNTupleReadOptions opts_;

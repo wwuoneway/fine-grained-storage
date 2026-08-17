@@ -1,7 +1,6 @@
 #include "fgs/event_reader.hpp"
 
 #include <algorithm>
-#include <chrono>
 #include <iostream>
 #include <limits>
 #include <set>
@@ -187,20 +186,9 @@ namespace fgs {
 
   std::size_t EventReader::read_product(std::uint64_t event_id, std::string const& product)
   {
-    using clock = std::chrono::steady_clock;
-    auto const ns = [](auto d) { return std::chrono::duration<double, std::nano>(d).count(); };
-
-    clock::time_point t0;
-    if (instrument_) t0 = clock::now();
     Location const loc = locate(event_id, product);
     Container& c = *product_containers_[loc.product];
-    if (instrument_) timers_.locate_ns += ns(clock::now() - t0);
-
-    clock::time_point tl;
-    if (instrument_) tl = clock::now();
     c.reader->LoadEntry(loc.entry); // whole-row read: refreshes the bound vector
-    if (instrument_) timers_.load_ns += ns(clock::now() - tl);
-
     return c.pos ? c.pos->size() : c.mom->size();
   }
 

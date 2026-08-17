@@ -36,9 +36,6 @@ namespace fgs::bench {
       std::size_t i_ = 0;
     };
 
-    // The seed is required, not a convenience: read_once builds the order once
-    // for the timed pass and again for the instrumented pass, and the two must
-    // visit the same ids in the same order for their counters to be comparable.
     class ScatterOrder : public EventOrder {
     public:
       ScatterOrder(std::uint64_t n, std::uint64_t distance, std::uint64_t seed) : order_(n)

@@ -17,13 +17,11 @@
 #include <map>
 #include <memory>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include <ROOT/RNTupleReadOptions.hxx>
 #include <ROOT/RNTupleReader.hxx>
 
-#include "fgs/token.hpp"
 #include "fgs/types.hpp"
 
 namespace fgs {
@@ -31,7 +29,7 @@ namespace fgs {
   class EventReader {
   public:
     // Opens `root_file` and its index TTree (`index_name`), builds the in-memory
-    // event -> tokens map, and opens one RNTuple reader per product container.
+    // index, and opens one RNTuple reader per product container.
     // `opts` controls the read path (cluster cache / prefetch, metrics) and is
     // forwarded to every container reader. An empty `products` reads every
     // product in the index; otherwise only those, and only their containers
@@ -98,9 +96,14 @@ namespace fgs {
     // open one. Keyed by container name.
     Container& container_for(std::string const& name);
 
-    // O(1) token lookup via the in-memory index built once in the constructor.
+    struct Location {
+      std::uint64_t entry = 0;
+      std::size_t product = 0;
+    };
+
+    // O(1) lookup in the in-memory index built once in the constructor.
     // Throws if event_id or product was not present in the index.
-    Token const& locate(std::uint64_t event_id, std::string const& product);
+    Location locate(std::uint64_t event_id, std::string const& product) const;
 
     bool instrument_ = false;
     SubTimers timers_;
@@ -111,9 +114,11 @@ namespace fgs {
     std::uint64_t num_events_ = 0;
     std::vector<std::string> product_names_;
 
-    // event_id -> per-product tokens. Populated by one sequential index scan in
-    // the constructor; the index TTree is never touched again after that.
-    std::unordered_map<std::uint64_t, EventIndex> index_;
+    // Row numbers only, at entries_[event_id * product_names_.size() + product];
+    // a product always lives in one container, so that is held per product.
+    std::vector<std::uint64_t> entries_;
+    std::vector<Container*> product_containers_;
+
     std::map<std::string, Container> containers_;
   };
 

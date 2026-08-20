@@ -1,347 +1,142 @@
 # strategy_one RNTuple layout
 
-`strategy_one` reads the FGS2 binary dataset (see [`FORMAT.md`](FORMAT.md)) and
-writes it into ROOT files using **RNTuple**, ROOT's columnar storage format. This
-document is the authoritative schema for that output. It must stay in agreement
-with the field definitions in
+`strategy_one` reads the FGS2 binary dataset ([`FORMAT.md`](FORMAT.md)) and re-encodes
+it with ROOT's **RNTuple** columnar format. This document is the authoritative schema
+for that output and must stay in agreement with
 [`writing/strategy_one/main.cpp`](../writing/strategy_one/main.cpp).
 
-Producer: `fgs_strategy_one`. Consumer / cross-check reader: `fgs_verify`.
+Producer: `fgs_strategy_one`. Consumers: `EventReader`
+([`reading/event_reader.cpp`](../reading/event_reader.cpp)), which the read benchmarks
+drive, and `fgs_verify`, which cross-checks the output against the Phase 1 binaries.
 
----
+## Terms
 
-## 1. What is produced
+| Term | Here | FORM counterpart |
+|---|---|---|
+| product | one physics quantity per particle: `position` or `momentum` | data product |
+| container | one named storage object inside the ROOT file | Container |
+| token | `{container, entry}`, locating one product of one event | Token |
+| variant | one write of the same events in a different physical row order | -- |
 
-`strategy_one` emits one folder per **write variant** under its output root, plus
-**one** manifest for the whole strategy at the root (the product registry is the
-same for every variant, so it is not duplicated). The variants differ only in the
-physical order events are written; the schema is identical. With the default config:
+## 1. Output tree
 
-```
-output/writing/rntuple/strategy_one/
-  manifest.json               product registry + variant list (one per strategy)
-  no-shuffle/                 events written in event order (0,1,2,...)
-    strategy_one.root         one ROOT TFile: 2 data RNTuples + 1 index TTree
-  shuffle/                    events written in a seeded shuffle (e.g. 3,10,1,5,...)
-    strategy_one_shuffled.root
-```
-
-A "data product" here is one physics quantity per particle. There are two:
-`position` and `momentum`. Each product gets one **data** RNTuple
-(`position_container`, `momentum_container`). Both share a single combined
-**index**, a TTree named `index` (not an RNTuple).
+One directory per write variant under the configured `output_root`, plus one manifest
+for the whole strategy at its root. The product registry does not change across
+variants, so it is not duplicated per variant.
 
 ```
-        strategy_one.root  (TFile)
-        +------------------------------------------------------------+
-        | position_container  momentum_container  RNTuples (numbers) |
-        | index               TTree               event -> tokens    |
-        +------------------------------------------------------------+
-                              ^
-                              |  described by
-              manifest.json --+  (which products exist, where they live)
+<output_root>/
+  manifest.json                 product registry + per-variant statistics
+  no-shuffle/
+    strategy_one.root           2 data RNTuples + 1 index TTree
+  shuffle/
+    strategy_one_shuffled.root  same schema, different row order
 ```
 
-### Write variants (the ordering axis)
+Each `.root` file holds three containers: `position_container` and `momentum_container`
+(RNTuple, section 2) and `index` (TTree, section 3). `manifest.json` records which
+products exist, which container and technology each uses, and per variant the file path,
+its size, and its cluster and page counts, so a reader can answer "does this dataset
+have momentum data" without opening ROOT.
 
-The variants exist to study how on-disk event order affects reads, since in DUNE
-events do not arrive sorted.
+### Write variants
 
-- **`no-shuffle`** -- events written in event order; event `e` lands in row `e`
-  of each container.
-- **`shuffle`** -- events written in a permutation produced by a seeded shuffle
-  (`shuffle_seed` in the config). The same permutation is used for both products.
+The `variants` list in the writing config selects which are produced; the study configs
+request `no-shuffle` only.
 
-The shuffle changes **only** the physical row order. Each event is still a single
-self-contained row, and the index maps `event_id` to that row regardless of order,
-so a reader gets identical results from either variant.
+| Variant | Row order | File |
+|---|---|---|
+| `no-shuffle` | event `e` occupies row `e` | `strategy_one.root` |
+| `shuffle` | a permutation seeded by `shuffle_seed`, the same for both products | `strategy_one_shuffled.root` |
 
----
+The axis exists because DUNE events do not arrive sorted. A shuffle changes only the
+physical row order: each event remains one self-contained row, and the index maps
+`event_id` to that row either way, so both variants return identical values to a reader.
 
-## 2. Data RNTuples -- one row per event
+## 2. Data containers
 
-`position_container` and `momentum_container` have the same shape; only the
-element type and field names differ. Each **row is one whole event**: an
-`event_id` plus the event's entire particle collection stored as a single vector
-field.
+`position_container` and `momentum_container` have the same shape and differ only in
+element type and field name. One row is one whole event.
 
-```
-position_container                        momentum_container
- fields:                                   fields:
-   event_id           : uint64              event_id           : uint64
-   vec_particles_pos  : vector<Position>    vec_particles_mom  : vector<Momentum>
+| Container | Field | Type |
+|---|---|---|
+| `position_container` | `event_id` | `uint64` |
+| | `vec_particles_pos` | `vector<Position>`, `Position = {x, y, z : float}` |
+| `momentum_container` | `event_id` | `uint64` |
+| | `vec_particles_mom` | `vector<Momentum>`, `Momentum = {px, py, pz : float}` |
 
- Position = { x, y, z : float }           Momentum = { px, py, pz : float }
- 1 row  =  1 event                        1 row  =  1 event
-```
+`Position` and `Momentum` are defined in `core/include/fgs/types.hpp`.
 
-An event with `N` particles is one row whose vector field holds `N` elements. An
-event with **zero** particles is still one row, with an empty vector.
+An event with `N` particles is one row whose vector field holds `N` elements. An event
+with zero particles is still one row, with an empty vector. `event_id` is stored on
+every row so that a row is self-describing and `fgs_verify` can assert the row it read
+belongs to the event it asked for, independently of the index.
 
-`event_id` is stored on every row on purpose: it makes each row self-describing
-and lets `fgs_verify` assert that the row it read really belongs to the event it
-asked for, independently of the index.
+RNTuple does not store these rows contiguously: a vector field is split into an offsets
+column plus one column per scalar member, so a reader that wants only `x` reads only
+that column. See ROOT's
+[binary format specification](https://github.com/root-project/root/blob/master/tree/ntuple/doc/BinaryFormatSpecification.md).
 
-### Worked example (`no-shuffle`)
+## 3. Index container
 
-Three events with particle counts 2, 3, 2. The `position_container` holds:
+A single TTree named `index` maps each `event_id` to the per-product tokens that locate
+that event's row in each data container.
 
-```
-position_container  (logical row view)
- row │ event_id │ vec_particles_pos
- ────┼──────────┼────────────────────────────────────────────────────
-  0  │    0     │ [ (12.31,-5.63,301.20), (-64.39,53.56,-322.52) ]        event 0 (2)
-  1  │    1     │ [ (8.10,19.44,-77.01), (-12.55,-3.20,140.06),
-     │          │   (64.77,41.13,-9.88) ]                                 event 1 (3)
-  2  │    2     │ [ (21.76,-57.48,-302.83), (-6.15,26.12,139.40) ]        event 2 (2)
-```
+| Branch | Type | Meaning |
+|---|---|---|
+| `event_id` | `uint64` | which event |
+| `index_value` | `fgs::EventIndex`, i.e. `map<string, Token>` | product name -> token |
 
-In `shuffle` the same three rows are written in a shuffled order (say event 1,
-then 2, then 0), so event 0 would land in row 2 instead of row 0. Each event's
-row is unchanged; only its row number differs, and the index records it.
+`Token = {container : string, entry : uint64}` (`core/include/fgs/token.hpp`).
+`container` names the data RNTuple and `entry` is the row within it. One index row holds
+one entry per product, so both products of an event are located from a single row. Three
+events, `no-shuffle`:
 
-### Columnar, not row-major
+| row | `event_id` | `index_value` |
+|---|---|---|
+| 0 | 0 | `{position: {position_container, 0}, momentum: {momentum_container, 0}}` |
+| 1 | 1 | `{position: {position_container, 1}, momentum: {momentum_container, 1}}` |
+| 2 | 2 | `{position: {position_container, 2}, momentum: {momentum_container, 2}}` |
 
-RNTuple does not store the table row-by-row. A `vector<Position>` field is split
-into an offsets column (where each event's particles start) plus one column per
-scalar member. Logically it is the table above; physically it is:
-
-```
- event_id stream:            [ 0, 1, 2 ]
- vec offsets stream:         [ 2, 5, 7 ]        (cumulative particle counts)
- vec_particles_pos.x stream: [ 12.31, -64.39, 8.10, -12.55, 64.77, 21.76, -6.15 ]
- vec_particles_pos.y stream: [ -5.63, 53.56, 19.44, -3.20, 41.13, -57.48, 26.12 ]
- vec_particles_pos.z stream: [ 301.20, -322.52, -77.01, 140.06, -9.88, -302.83, 139.40 ]
-```
-
-A reader that only wants `x` reads only that member's stream.
-
----
-
-## 3. Index TTree -- one row per event (the address book)
-
-A single TTree named `index` maps each `event_id` to the per-product **tokens**
-that locate that event's row in each data RNTuple. It is a **TTree**, not an
-RNTuple, because TTree provides a persistent value-based index (`BuildIndex`) for
-O(log N) lookup without scanning; RNTuple has no such index.
+Under `shuffle`, index rows are filled in write order, so both the index rows and the
+`entry` values follow the permutation. The container name never changes.
 
 ```
-index TTree
- branches:
-   event_id     : uint64                          which event
-   index_value  : map<string, Token>              product name -> Token
-
- Token = { container : string, entry : uint64 }
- 1 row  =  1 event      (one map holding both products' tokens)
-```
-
-`index_value` is `fgs::EventIndex`, the `core` type `map<string, Token>`
-(`core/include/fgs/token.hpp`). For each event it holds one entry per product:
-`"position" -> {container, entry}`
-and `"momentum" -> {container, entry}`, where `container` names the data RNTuple
-and `entry` is the row within it. Because each event is a single row, `entry` is
-just that event's row number in the container.
-
-For the worked example above (3 events, `no-shuffle`), the `index` TTree is:
-
-```
-index TTree
- row │ event_id │ index_value
- ────┼──────────┼──────────────────────────────────────────────────────────────
-  0  │    0     │ { position:{position_container,0}, momentum:{momentum_container,0} }
-  1  │    1     │ { position:{position_container,1}, momentum:{momentum_container,1} }
-  2  │    2     │ { position:{position_container,2}, momentum:{momentum_container,2} }
-```
-
-In `shuffle`, if event 0 is written last, its row (and both its token `entry`
-values) become `2` instead of `0`. The container name never changes.
-
-After all rows are filled, the writer calls `index_tree->BuildIndex("event_id")`,
-which stores a persistent single-key `TTreeIndex` inside the file, so a reader can
-jump to an event's row with `GetEntryNumberWithIndex` in O(log N) with no forward
-scan. `fgs_verify` instead reads the whole index into a RAM map once at startup
-(see section 6); both approaches are lookups against the same on-disk index.
-
-> Note on `shuffle`: the index rows are filled in write order, so in the shuffled
-> variant the *physical* index rows are also shuffled. `BuildIndex` makes lookup
-> value-based, so order does not matter to a reader.
-
-### How the index points into the data
-
-```
-   index TTree (event 1)                 position_container
+   index row (event 1)                   position_container
  +-----------------------------+         +----------------------------+
  | event_id = 1                |         | row 0  (event 0)           |
  | index_value["position"]     |         | row 1  (event 1) <---------+
- |   = {position_container, 1} |--------▶| row 2  (event 2)           |
+ |   = {position_container, 1} |-------->| row 2  (event 2)           |
  | index_value["momentum"]     |         +----------------------------+
  |   = {momentum_container, 1} |----+     momentum_container
  +-----------------------------+    |    +----------------------------+
-                                    +---▶| row 1  (event 1)           |
+                                    +--->| row 1  (event 1)           |
                                          +----------------------------+
 ```
 
-One index row carries both products' tokens, and each token names its own
-container, so the products stay independent.
+The index is a TTree rather than an RNTuple because TTree supports a persistent
+value-based index, which RNTuple does not. After the rows are filled the writer calls
+`BuildIndex("event_id")`, storing a `TTreeIndex` in the file, so a reader may resolve an
+event with `GetEntryNumberWithIndex` in O(log N) and no forward scan. `EventReader` does
+not use it: it scans the branch once at construction and answers later lookups from
+memory. Both are lookups against the same on-disk index.
 
----
+## 4. Invariants and edge cases
 
-## 4. The manifest (product registry)
+The writer guarantees two properties of every file:
 
-A single JSON sidecar at the strategy root, **one per strategy**, not per variant,
-since the product registry is identical across variants. A reader can answer "does
-this dataset contain position data, and which variants exist?" by reading only
-this file: no ROOT, no opening the `.root`.
+- the `N` event ids are exactly `0` to `N-1`, each appearing once,
+- a product always lives in the same container across all events of a file.
 
-```json
-{
-    "generated_at": "2026-07-27 09:41:12 UTC",
-    "strategy": "strategy_one",
-    "total_events": 10000,
-    "avg_particles_per_event": 6.9919,
-    "avg_event_size_mib": 0.001,
-    "total_particles": 69919,
-    "variants": [
-        {
-            "name": "no-shuffle",
-            "dir": "no-shuffle",
-            "file": "no-shuffle/strategy_one.root",
-            "file_mib": 3.573,
-            "containers": {
-                "position_container": { "clusters": 1, "pages": 8 },
-                "momentum_container": { "clusters": 1, "pages": 8 }
-            }
-        },
-        {
-            "name": "shuffle",
-            "dir": "shuffle",
-            "file": "shuffle/strategy_one_shuffled.root",
-            "file_mib": 3.674,
-            "shuffle_seed": 7,
-            "containers": {
-                "position_container": { "clusters": 1, "pages": 8 },
-                "momentum_container": { "clusters": 1, "pages": 8 }
-            }
-        }
-    ],
-    "products": [
-        {
-            "name": "position",
-            "container": "position_container",
-            "container_type": "RNTuple",
-            "index_container": "index",
-            "index_container_type": "TTree"
-        },
-        {
-            "name": "momentum",
-            "container": "momentum_container",
-            "container_type": "RNTuple",
-            "index_container": "index",
-            "index_container_type": "TTree"
-        }
-    ]
-}
-```
-
-| Field                    | Meaning                                                    |
-|--------------------------|------------------------------------------------------------|
-| `generated_at`           | UTC timestamp the manifest was written                     |
-| `strategy`               | which write strategy produced this output                  |
-| `total_events`           | events written (the writer's source of truth)              |
-| `avg_particles_per_event`| mean particle count per event                              |
-| `avg_event_size_mib`     | mean on-disk footprint of one event (averaged over variants)|
-| `total_particles`        | sum of all particles written                               |
-| `variants[]`             | one entry per write variant                                |
-| `.name` / `.dir`         | variant name and its subfolder under the strategy root     |
-| `.file`                  | data ROOT file, path relative to the strategy root         |
-| `.file_mib`              | on-disk size of that variant's ROOT file, in MiB           |
-| `.shuffle_seed`          | seed for the permutation (present only on `shuffle`)       |
-| `.containers{}`          | per data container, its RNTuple `clusters` and `pages`     |
-| `products[]`             | one entry per data product                                 |
-| `.container`             | name of the data RNTuple inside the ROOT file              |
-| `.container_type`        | storage technology of the data container (`RNTuple`)       |
-| `.index_container`       | name of the index container, the shared `index`            |
-| `.index_container_type`  | storage technology of the index container (`TTree`)        |
-
-A reader opens a variant's data with `<strategy root>/<variant.file>`; the path is
-given explicitly, not inferred from the name. The `_type` fields name the storage
-technology of each container, analogous to FORM's *minor technology* in a
-`Placement`. They let a reader pick the right API (`RNTupleReader` for the data, a
-`TTree` for the index) from the manifest alone, without opening the `.root`.
-
-If a future strategy splits products into separate ROOT files (one per product), a
-per-product `file` field can be added to each product entry; reader code stays the
-same otherwise.
-
----
-
-## 5. End-to-end pipeline
-
-```
- Phase 1 (generation)        Phase 2a (fgs_strategy_one)          Phase 2b (fgs_verify)
- --------------------        ---------------------------          ---------------------
- positions.bin  ┐            load_product() each product          read strategy manifest:
- momenta.bin    ├─ in        --> per-event float buffers            products + variants?
- manifest.json  ┘  output/generation         │                     for each variant listed:
-                                             ▼                        index lookup by event_id
-                            for each variant: shuffle order,                  │
-                            write 2 RNTuples + index TTree,                   ▼
-                            BuildIndex(event_id)                  read the target event's row;
-                                             │                    cross-check values vs the
-                                             ▼                    Phase 1 originals (==)
-                   strategy_one/<variant>/<root file>                       │
-                   strategy_one/manifest.json (one) ────────────────────────┘
-```
-
----
-
-## 6. Read path (how `fgs_verify` fetches one event)
-
-```
- target_event_id = 42, product = "position"
-        │
-        │ 1. read the whole "index" TTree once into
-        │    unordered_map<event_id, EventIndex>
-        ▼
-   idx = tokens[42]                              (the event's per-product tokens)
-        │
-        │ 2. token = idx["position"] = { container="position_container", entry=42 }
-        ▼
-   { container = "position_container", entry = 42 }   (no-shuffle; entry differs in shuffle)
-        │
-        │ 3. open position_container, read ONLY row `entry`
-        ▼
-   row 42: event_id = 42, vec_particles_pos = [ (x,y,z), ... ]
-        │
-        │ 4. assert the row's event_id == 42
-        │ 5. compare each Position to the original Event  (exact ==)
-        ▼
-   event 42 PASSED (2 particles)
-```
-
-The data RNTuple is never scanned to *find* the event: the token gives its exact
-row, and a whole-row read fetches the event's entire particle vector at once.
-`fgs_verify` runs this for **every** variant the strategy manifest lists, so
-`no-shuffle` and `shuffle` are both checked against the same reference data.
-
-### Where the index lives: on disk
-
-The index is **persisted on disk** as the `index` TTree plus its `TTreeIndex`
-(built with `BuildIndex("event_id")` at write time). `fgs_verify` reads the whole
-index into an in-RAM `unordered_map` once at startup and then looks tokens up from
-that map, so the per-event read path touches only the data containers.
-
-> Phase 3 benchmarking note: whether to keep the index in RAM (as `fgs_verify`
-> does) or query the on-disk `TTreeIndex` per lookup with `GetEntryNumberWithIndex`
-> is a benchmarking choice, not part of this layout.
-
----
-
-## 7. Edge cases the layout handles
+`EventReader` counts the distinct ids while scanning the index and throws at
+construction if any id below that count is missing. It does not verify the second
+property: it takes each product's container from the first index row naming that
+product and reuses it for every event.
 
 | Case | Representation | Behaviour |
-|------|----------------|-----------|
-| Event with **0 particles** | one row whose vector field is empty | `vec.size() == 0`; reader reads the row, compares nothing, still valid |
-| **Missing** event id at read | `event_id` absent from the index map | lookup fails, `fgs_verify` aborts with a clear message |
-| Dataset smaller than a demo id | manifest `total_events` is small | `fgs_verify` validates requested ids are in range before reading |
-| Gen dir / root file disagree | `events.size() != manifest total_events` | `fgs_verify` aborts before reading |
+|---|---|---|
+| Event with 0 particles | one row whose vector field is empty | `vec.size() == 0`; the row is read and returns 0 elements |
+| Missing event id at read | id outside `[0, N)` | `EventReader` throws; a gap inside the range is rejected when the index is scanned, not mid-run |
+| Product not in the file | product name absent from the index | requesting it throws at construction, listing the products the file does hold |
+| Dataset smaller than a requested id | manifest `total_events` is small | `fgs_verify` validates ids are in range before reading |
+| Generation dir and ROOT file disagree | `events.size() != total_events` | `fgs_verify` aborts before reading |

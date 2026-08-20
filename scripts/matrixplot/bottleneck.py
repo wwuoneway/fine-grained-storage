@@ -104,7 +104,8 @@ def _draw_panel(ax, sel, bar_axis, bar_vals, seg_names, y_top):
 
 def plot_bottleneck_breakdown(rows, bar_axis, panel_axis, facet_axes, plots_dir, num_events,
                               payload_mib=None, cluster_page_summary=None,
-                              generation_summary=None, max_page_size=None):
+                              generation_summary=None, max_page_size=None,
+                              container_summary=None):
     """One figure: a stacked-bar breakdown per bar_axis value, panelled by panel_axis.
 
     Segments are I/O / Decompress / (Other, or the fine split). The Y scale is
@@ -158,6 +159,8 @@ def plot_bottleneck_breakdown(rows, bar_axis, panel_axis, facet_axes, plots_dir,
                         f"{cluster_page_summary['total_pages']} pages on disk")
     if max_page_size is not None:
         subtitle.append(f"{max_page_size['mib']:g} MiB max page size")
+    if container_summary is not None:
+        subtitle.append(container_summary)
 
     title = f"Wall-time bottleneck breakdown   [num_events={num_events}]"
     if subtitle:

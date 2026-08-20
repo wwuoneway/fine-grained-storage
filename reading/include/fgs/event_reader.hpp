@@ -32,10 +32,13 @@ namespace fgs {
     // Opens `root_file` and its index TTree (`index_name`), builds the in-memory
     // event -> tokens map, and opens one RNTuple reader per product container.
     // `opts` controls the read path (cluster cache / prefetch, metrics) and is
-    // forwarded to every container reader.
+    // forwarded to every container reader. An empty `products` reads every
+    // product in the index; otherwise only those, and only their containers
+    // are opened.
     EventReader(std::filesystem::path const& root_file,
                 std::string const& index_name,
-                ROOT::RNTupleReadOptions opts = {});
+                ROOT::RNTupleReadOptions opts = {},
+                std::vector<std::string> const& products = {});
 
     ~EventReader();
 
@@ -44,7 +47,7 @@ namespace fgs {
 
     std::uint64_t num_events() const { return num_events_; }
 
-    // Product names present in the index, sorted. Callers iterate this instead of
+    // The products this reader reads, sorted. Callers iterate this instead of
     // hard-coding which products a file holds.
     std::vector<std::string> const& product_names() const { return product_names_; }
 

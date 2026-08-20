@@ -12,7 +12,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import matplotlib.ticker
 
-from .data import METRICS, run_generation_summary, run_max_page_size
+from .data import METRICS, container_summary, run_generation_summary, run_max_page_size
 
 MARKERS = ["o", "s", "^", "D", "v", "P", "X"]
 
@@ -77,6 +77,9 @@ def _conditions(run_dirs):
         v = fixed(col)
         if v:
             parts.append(fmt.format(v))
+    containers = container_summary(rows)
+    if containers:
+        parts.append(containers)
     return "   |   ".join(parts).replace(",", " ")
 
 

@@ -14,9 +14,25 @@
 
 namespace fgs {
 
+  namespace {
+
+    std::string join(std::vector<std::string> const& names)
+    {
+      std::string out;
+      for (std::string const& name : names) {
+        if (!out.empty())
+          out += ", ";
+        out += name;
+      }
+      return out;
+    }
+
+  }
+
   EventReader::EventReader(std::filesystem::path const& root_file,
                            std::string const& index_name,
-                           ROOT::RNTupleReadOptions opts)
+                           ROOT::RNTupleReadOptions opts,
+                           std::vector<std::string> const& products)
     : root_file_(root_file), opts_(std::move(opts))
   {
     auto file = std::unique_ptr<TFile>(TFile::Open(root_file_.c_str(), "READ"));
@@ -28,25 +44,23 @@ namespace fgs {
       throw std::runtime_error("EventReader: index TTree \"" + index_name + "\" not found in " +
                                root_file_.string());
 
-    // One sequential scan builds the event -> tokens map and collects the product
-    // and container names. After this the TTree is never accessed again.
+    // One sequential scan builds the event -> tokens map and learns which
+    // container each product lives in. After this the TTree is never accessed
+    // again.
     std::uint64_t ev = 0;
     EventIndex* iv = nullptr;
     index->SetBranchAddress("event_id", &ev);
     index->SetBranchAddress("index_value", &iv);
 
-    std::set<std::string> products;
-    std::set<std::string> containers;
+    std::map<std::string, std::string> container_of;
     Long64_t const n = index->GetEntries();
     for (Long64_t i = 0; i < n; ++i) {
       index->GetEntry(i);
       if (!iv)
         continue;
       index_[ev] = *iv;
-      for (auto const& [product, token] : *iv) {
-        products.insert(product);
-        containers.insert(token.container);
-      }
+      for (auto const& [product, token] : *iv)
+        container_of.emplace(product, token.container);
     }
     index->ResetBranchAddresses();
 
@@ -58,7 +72,23 @@ namespace fgs {
         throw std::runtime_error("EventReader: index in " + root_file_.string() + " has " +
                                  std::to_string(num_events_) + " distinct events but event id " +
                                  std::to_string(id) + " is missing (ids must cover [0, N))");
-    product_names_.assign(products.begin(), products.end());
+
+    for (auto const& [product, container] : container_of)
+      product_names_.push_back(product);
+
+    if (!products.empty()) {
+      for (std::string const& product : products)
+        if (container_of.find(product) == container_of.end())
+          throw std::runtime_error("EventReader: product \"" + product + "\" requested but not in " +
+                                   root_file_.string() +
+                                   " (available: " + join(product_names_) + ")");
+      std::set<std::string> const selected(products.begin(), products.end());
+      product_names_.assign(selected.begin(), selected.end());
+    }
+
+    std::set<std::string> containers;
+    for (std::string const& product : product_names_)
+      containers.insert(container_of.at(product));
 
     // Open every container up front so read_product pays no open cost inside the
     // timed loop.

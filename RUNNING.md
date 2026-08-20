@@ -96,7 +96,8 @@ for one-offs; the study runner calls the same exes on generated configs.
 ./build/generation/fgs_generate    configs/generation/default.json     # generate
 ./build/writing/fgs_strategy_one   configs/writing/strategy_one.json   # write variants
 ./build/writing/fgs_verify                                             # verify all variants
-./build/benchmarks/read/fgs_read_bench configs/benchmarks/reading_benchmarks.json
+./build/benchmarks/read/fgs_read_bench configs/benchmarks/reading_benchmarks.json \
+  output/benchmarks/reading-benchmarks/manual-run   # run folder is required
 ```
 
 - Generation is deterministic (seed 42); skip it if `output/generation/` is

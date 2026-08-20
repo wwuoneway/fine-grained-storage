@@ -28,6 +28,8 @@ namespace fgs::bench {
     std::string access_pattern = "sequential";
     std::uint64_t access_seed = 1234; // random-pattern permutation seed
     std::uint64_t stride = 16;         // strided-pattern jump distance
+    std::uint64_t scatter_distance = 1; // scatter-pattern max swap distance
+    std::uint64_t scatter_seed = 1234;  // scatter-pattern swap seed
     std::uint64_t repetitions = 1;
     CacheState cache_state = CacheState::Cold;
     std::string evict_method = "posix_fadvise";

@@ -1,56 +1,59 @@
-"""Load summary.csv rows and the per-metric metadata (axes, defaults, formatting)."""
+"""Load summary.csv rows and the per-metric metadata (axes, labels, formatting)."""
 from __future__ import annotations
 
 import csv
 import json
 import math
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 # The sweep axes that appear as summary.csv columns.
 AXES = ["variant", "access_pattern", "cache_state", "cluster_cache", "implicit_mt"]
 
-DEFAULT_METRICS = [
-    "latency_us_mean",
-    "throughput_evt_s_mean",
-    "wall_s_mean",
-    # ROOT RNTuple counters (bottleneck attribution), if present:
-    "read_wall_ms",       # time in storage I/O
-    "unzip_wall_ms",      # time decompressing
-    "read_payload_mib",   # bytes pulled from storage
-    "n_read",             # read amplification (byte-range reads)
-    "read_efficiency",    # payload / (payload + overhead)
-    "n_page_read",        # sealed pages fetched from storage
-    "n_page_unsealed",    # pages actually decompressed
-    "n_cluster_loaded",   # clusters fetched from storage
-    # "Other"-segment breakdown (instrumented pass):
-    "locate_ms",          # row-range lookup
-    "load_ms",            # LoadEntry decode
-    "fill_ms",            # per-event vector alloc + copy
-]
 
-# Optimisation direction per metric, used for the title and the colormap.
-DIRECTION = {
-    "latency_us_mean": ("lower = better", "RdYlGn_r"),
-    "wall_s_mean": ("lower = better", "RdYlGn_r"),
-    "throughput_evt_s_mean": ("higher = better", "RdYlGn"),
-    "read_wall_ms": ("lower = better", "RdYlGn_r"),
-    "unzip_wall_ms": ("lower = better", "RdYlGn_r"),
-    "read_payload_mib": ("lower = better", "RdYlGn_r"),
-    "n_read": ("lower = better", "RdYlGn_r"),
-    "read_efficiency": ("higher = better", "RdYlGn"),
-    "n_page_read": ("lower = better", "RdYlGn_r"),
-    "n_page_unsealed": ("lower = better", "RdYlGn_r"),
-    "n_cluster_loaded": ("lower = better", "RdYlGn_r"),
-    "locate_ms": ("lower = better", "RdYlGn_r"),
-    "load_ms": ("lower = better", "RdYlGn_r"),
-    "fill_ms": ("lower = better", "RdYlGn_r"),
+@dataclass(frozen=True)
+class Metric:
+    label: str    # axis and colourbar text, carrying the unit
+    scale: float  # multiply the raw column by this before plotting
+    fmt: str      # format spec for cell annotations
+    better: str   # "lower" or "higher"
+    slug: str     # output filename stem
+
+    @property
+    def name(self) -> str:
+        """Label without its unit, for figure titles."""
+        return self.label.split(" (")[0]
+
+    @property
+    def cmap(self) -> str:
+        return "RdYlGn" if self.better == "higher" else "RdYlGn_r"
+
+    @property
+    def direction(self) -> str:
+        return f"{self.better} = better"
+
+
+METRICS = {
+    "wall_s_mean":      Metric("wall time (s)", 1.0, ".2f", "lower", "wall_time"),
+    "unzip_wall_ms":    Metric("decompression time (s)", 1e-3, ".2f", "lower", "decompression"),
+    "read_payload_mib": Metric("bytes read (MiB)", 1.0, ".1f", "lower", "read_payload"),
+    "n_page_read":      Metric("pages read", 1.0, ".0f", "lower", "pages_read"),
 }
 
 
 def read_summary(path: Path) -> list[dict]:
     with open(path, newline="") as f:
-        return list(csv.DictReader(f))
+        rows = list(csv.DictReader(f))
+    # Fold the distance into access_pattern rather than adding an axis: every
+    # plot groups by access_pattern, so scatter distances separate everywhere at
+    # once, and non-scatter rows keep a single value instead of a facet of NAs.
+    for r in rows:
+        if r.get("access_pattern") == "scatter":
+            r["access_pattern"] = f"scatter-{r.get('scatter_distance', '?')}"
+        elif r.get("access_pattern") == "strided" and "stride" in r:
+            r["access_pattern"] = f"strided-{r['stride']}"
+    return rows
 
 
 def _first_manifest(run_dir: Path) -> dict | None:
@@ -153,15 +156,5 @@ def distinct(rows: list[dict], col: str) -> list[str]:
 def fmt(metric: str, v: float) -> str:
     if math.isnan(v):
         return "--"
-    if metric == "wall_s_mean":
-        return f"{v:.4f}"
-    if metric == "read_efficiency":
-        return f"{v:.3f}"
-    if metric in ("throughput_evt_s_mean", "n_read"):
-        return f"{v:.0f}"
-    if metric in ("read_wall_ms", "unzip_wall_ms", "read_payload_mib",
-                  "locate_ms", "load_ms", "fill_ms"):
-        return f"{v:.2f}"
-    if metric in ("n_page_read", "n_page_unsealed", "n_cluster_loaded"):
-        return f"{v:.0f}"
-    return f"{v:.1f}"
+    spec = METRICS[metric].fmt if metric in METRICS else ".1f"
+    return f"{v:{spec}}"

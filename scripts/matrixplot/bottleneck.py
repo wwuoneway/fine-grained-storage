@@ -72,7 +72,7 @@ def _cell_segments(cell, seg_names):
 
 def _bottleneck_one_variant(variant_rows, variant_name, col_axis, facet_axes,
                             plots_dir, num_events, global_max, seg_names, payload_mib,
-                            cluster_page_summary, generation_summary):
+                            cluster_page_summary, generation_summary, max_page_size):
     """Single stacked-bar bottleneck chart for one variant.  Returns the PNG path."""
     col_vals = distinct(variant_rows, col_axis)
     facet_vals = [distinct(variant_rows, a) for a in facet_axes]
@@ -193,10 +193,15 @@ def _bottleneck_one_variant(variant_rows, variant_name, col_axis, facet_axes,
         fig.text(0.5, _subtitle_y, "   ·   ".join(line1_parts),
                  ha="center", va="top", fontsize=10, color="#666666")
 
+    line2_parts = []
     if cluster_page_summary is not None:
-        line2 = (f"{cluster_page_summary['clusters']} cluster(s) on disk, "
-                f"{cluster_page_summary['total_pages']} pages on disk")
-        fig.text(0.5, _subtitle_y2, line2, ha="center", va="top", fontsize=10, color="#666666")
+        line2_parts.append(f"{cluster_page_summary['clusters']} cluster(s) on disk, "
+                           f"{cluster_page_summary['total_pages']} pages on disk")
+    if max_page_size is not None:
+        line2_parts.append(f"{max_page_size['mib']:g} MiB max page size")
+    if line2_parts:
+        fig.text(0.5, _subtitle_y2, "   ·   ".join(line2_parts),
+                 ha="center", va="top", fontsize=10, color="#666666")
     fig.legend(handles, labels,
                loc="upper center", bbox_to_anchor=(0.5, _legend_y),
                ncol=n_seg, fontsize=13,
@@ -210,7 +215,8 @@ def _bottleneck_one_variant(variant_rows, variant_name, col_axis, facet_axes,
 
 
 def plot_bottleneck_breakdown(rows, col_axis, row_axis, facet_axes, plots_dir, num_events,
-                              payload_mib=None, cluster_page_summary=None, generation_summary=None):
+                              payload_mib=None, cluster_page_summary=None, generation_summary=None,
+                              max_page_size=None):
     """One stacked-bar breakdown plot per row_axis value (variant).
 
     Each plot shows a single variant; x-axis = col_axis; one stacked bar per
@@ -244,7 +250,7 @@ def plot_bottleneck_breakdown(rows, col_axis, row_axis, facet_axes, plots_dir, n
         variant_rows = [r for r in rows if r[row_axis] == rv]
         png = _bottleneck_one_variant(
             variant_rows, rv, col_axis, facet_axes, plots_dir, num_events, global_max, seg_names,
-            payload_mib, cluster_page_summary, generation_summary
+            payload_mib, cluster_page_summary, generation_summary, max_page_size
         )
         pngs.append(png)
     return pngs

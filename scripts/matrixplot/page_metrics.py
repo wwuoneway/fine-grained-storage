@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .data import dataset_facts_by_container, read_summary
+from .data import dataset_facts_by_container, read_summary, run_max_page_size
 
 
 def _ratio(unsealed: str, read: str) -> str:
@@ -28,6 +28,13 @@ def write_page_metrics_md(run_dir: Path) -> Path | None:
     facts = dataset_facts_by_container(run_dir)
 
     lines = ["# Page read / unseal comparison", "", f"Run: `{run_dir}`", ""]
+
+    max_page = run_max_page_size(run_dir)
+    if max_page:
+        lines += [
+            f"Max unzipped page size: **{max_page['mib']:g} MiB** ({max_page['bytes']} bytes)",
+            "",
+        ]
 
     if facts:
         lines += ["## Dataset facts (fixed per file, not benchmark-dependent)", ""]

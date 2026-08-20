@@ -1,5 +1,6 @@
 {
   "_comment": "Template for configs/study/axes.json, the study matrix scripts/studygen reads by default. axes.json is local and gitignored (tune it per machine, same as .env vs .env.example); copy this file to axes.json and edit the values for your run.",
+  "_comment_writing": "tiers.<tier>.writing.max_page_size_mib is optional. Each entry is one value of RNTuple's MaxUnzippedPageSize, given in MiB (2^20 bytes) and swept as its own write-options combo (ids pg0p25mib, pg5mib, ...) with its own written files and benchmark config, so the sweep multiplies the run count. Fractional values are allowed. An entry of 1 is ROOT's own default, so it maps to the 'default' combo and reuses the files written without any write options rather than duplicating them. Delete the key entirely for the same effect with no sweep.",
   "output_roots": {
     "generation": "output/generation/study",
     "writing": "output/writing/study"
@@ -24,7 +25,8 @@
       },
       "writing": {
         "variants": ["no-shuffle", "shuffle"],
-        "shuffle_seed": 7
+        "shuffle_seed": 7,
+        "max_page_size_mib": [0.25, 1]
       },
       "reading": {
         "access_pattern": ["sequential", "random", "strided"],

@@ -9,13 +9,6 @@ This document is the authoritative spec. It must stay in agreement with the
 constants at the top of
 [`generation/include/fgs/bin_io.hpp`](../generation/include/fgs/bin_io.hpp).
 
-## Why two files instead of one per event
-
-One file per event at 1 million events = 1 million files. OS overhead (directory
-lookups, inodes, `open()` syscalls) makes this impractical. Two files means two
-`open()` calls total, and each file can be read in one sequential pass — cache
-friendly for later benchmark phases.
-
 ## Conventions
 
 - All multi-byte integers are **little-endian**.
@@ -27,8 +20,8 @@ friendly for later benchmark phases.
 
 | Offset    | Type         | Bytes | Field          | Notes                                           |
 |-----------|--------------|-------|----------------|-------------------------------------------------|
-| `0`       | `char[4]`    | 4     | `magic`        | `'F','G','S','\0'` — identifies file type       |
-| `4`       | `uint32`     | 4     | `version`      | `2` — format version; version field owns versioning, not magic |
+| `0`       | `char[4]`    | 4     | `magic`        | `'F','G','S','\0'`, identifies file type        |
+| `4`       | `uint32`     | 4     | `version`      | `2`; the version field owns versioning, not magic |
 | `8`       | `char[32]`   | 32    | `product_name` | null-padded ASCII, e.g. `"position"`            |
 | `40`      | `char[32]`   | 32    | `product_type` | null-padded ASCII, e.g. `"float3"`              |
 | `72`      | `uint64`     | 8     | `num_events`   | total number of events in this file             |
@@ -65,7 +58,7 @@ Written alongside the product files. Fields:
 
 | Field            | Type              | Description                                    |
 |------------------|-------------------|------------------------------------------------|
-| `format`         | string            | `"FGS2"` — identifies this format version      |
+| `format`         | string            | `"FGS2"`, identifies this format version        |
 | `config`         | object            | the full config that produced this dataset      |
 | `seed`           | uint64            | RNG seed used                                   |
 | `num_events`     | uint64            | number of events                                |
@@ -82,16 +75,15 @@ Each entry in `events`:
 | `event_id`   | uint64 | event identifier (0-based)          |
 | `n_particles`| uint32 | particle count for this event       |
 
-The `n_particles` field lets a reader answer "how many particles in event N?"
-without opening or scanning the binary product files.
+`n_particles` gives the particle count of any event without opening or scanning
+the binary product files.
 
 ## Versioning
 
-If the data model changes (e.g. a third product is added), bump `version` in
-`bin_io.hpp`. `ProductReader` will reject files with an unknown version with a
-clear error message. Files with version `1` (the old per-event format) are also
-detected and rejected with a specific message directing the user to re-run
-generation.
+If the data model changes, bump `kVersion` in `bin_io.hpp`. `ProductReader`
+rejects any file whose version is not `kVersion`, and reports version `1`, the
+superseded per-event format, with a message directing the user to re-run
+generation ([`generation/src/bin_io.cpp:145-150`](../generation/src/bin_io.cpp)).
 
 ## Round-tripping
 

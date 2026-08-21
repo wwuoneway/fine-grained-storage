@@ -1,30 +1,36 @@
-"""Expand one tier's axes into dataset and write-option combos."""
-import itertools
-
+"""Expand the axes file into dataset and write-option combos."""
 from .naming import si, tag_mib
 
 
-def datasets(tier):
-    """Yield (dataset_id, num_events, particles) for each generation combo."""
-    g = tier["generation"]
-    for n, parts in itertools.product(g["num_events"], g["particles"]):
-        yield f"s{si(n)}_p{parts['min']}-{parts['max']}", n, parts
+def datasets(axes):
+    """Return (dataset_id, num_events, particles) for each `generation` entry."""
+    out = []
+    seen = set()
+    for entry in axes["generation"]:
+        n = entry["num_events"]
+        parts = entry["particles"]
+        ds_id = f"s{si(n)}_p{parts['min']}-{parts['max']}"
+        if ds_id in seen:
+            raise ValueError(f"two generation entries give dataset id '{ds_id}'")
+        seen.add(ds_id)
+        out.append((ds_id, n, parts))
+    return out
 
 
 # ROOT's own MaxUnzippedPageSize (RNTupleWriteOptions.hxx: 1024 * 1024). Asking
 # for it explicitly would write a byte-identical file under a second id, so this
-# value maps to the 'default' combo and reuses whatever 'default' already wrote.
+# value maps to the 'default' combo.
 ROOT_DEFAULT_MAX_PAGE_MIB = 1
 
 
-def write_opts(tier):
+def write_opts(axes):
     """Yield (wopts_id, write_options_or_None) for each writing combo.
 
     An absent `max_page_size_mib`, or an entry equal to ROOT's own default,
     yields the 'default' combo: no write_options at all, so every RNTuple
     option keeps its ROOT default.
     """
-    pages = tier["writing"].get("max_page_size_mib")
+    pages = axes["writing"].get("max_page_size_mib")
     if not pages:
         yield "default", None
         return

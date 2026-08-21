@@ -1,56 +1,83 @@
-"""Load summary.csv rows and the per-metric metadata (axes, defaults, formatting)."""
+"""Load summary.csv rows and the per-metric metadata (axes, labels, formatting)."""
 from __future__ import annotations
 
 import csv
+import functools
 import json
 import math
 import re
+import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 # The sweep axes that appear as summary.csv columns.
 AXES = ["variant", "access_pattern", "cache_state", "cluster_cache", "implicit_mt"]
 
-DEFAULT_METRICS = [
-    "latency_us_mean",
-    "throughput_evt_s_mean",
-    "wall_s_mean",
-    # ROOT RNTuple counters (bottleneck attribution), if present:
-    "read_wall_ms",       # time in storage I/O
-    "unzip_wall_ms",      # time decompressing
-    "read_payload_mib",   # bytes pulled from storage
-    "n_read",             # read amplification (byte-range reads)
-    "read_efficiency",    # payload / (payload + overhead)
-    "n_page_read",        # sealed pages fetched from storage
-    "n_page_unsealed",    # pages actually decompressed
-    "n_cluster_loaded",   # clusters fetched from storage
-    # "Other"-segment breakdown (instrumented pass):
-    "locate_ms",          # row-range lookup
-    "load_ms",            # LoadEntry decode
-    "fill_ms",            # per-event vector alloc + copy
-]
+# Everything except access_pattern: these pick the figure, not the curve, in the
+# cross-dataset comparison figures (event_size.py, scatter_curves.py).
+FIGURE_AXES = ["variant", "cache_state", "cluster_cache", "implicit_mt"]
 
-# Optimisation direction per metric, used for the title and the colormap.
-DIRECTION = {
-    "latency_us_mean": ("lower = better", "RdYlGn_r"),
-    "wall_s_mean": ("lower = better", "RdYlGn_r"),
-    "throughput_evt_s_mean": ("higher = better", "RdYlGn"),
-    "read_wall_ms": ("lower = better", "RdYlGn_r"),
-    "unzip_wall_ms": ("lower = better", "RdYlGn_r"),
-    "read_payload_mib": ("lower = better", "RdYlGn_r"),
-    "n_read": ("lower = better", "RdYlGn_r"),
-    "read_efficiency": ("higher = better", "RdYlGn"),
-    "n_page_read": ("lower = better", "RdYlGn_r"),
-    "n_page_unsealed": ("lower = better", "RdYlGn_r"),
-    "n_cluster_loaded": ("lower = better", "RdYlGn_r"),
-    "locate_ms": ("lower = better", "RdYlGn_r"),
-    "load_ms": ("lower = better", "RdYlGn_r"),
-    "fill_ms": ("lower = better", "RdYlGn_r"),
+# How each axis reads in a file name. Bare on/off would say nothing.
+AXIS_SLUG = {"cluster_cache": "cc-{}", "implicit_mt": "imt-{}"}
+
+
+@dataclass(frozen=True)
+class Metric:
+    label: str    # axis and colourbar text, carrying the unit
+    scale: float  # multiply the raw column by this before plotting
+    fmt: str      # format spec for cell annotations
+    better: str   # "lower" or "higher"
+    slug: str     # output filename stem
+    log: bool = False  # ratios spanning orders of magnitude need a log axis
+
+    @property
+    def name(self) -> str:
+        """Label without its unit, for figure titles."""
+        return self.label.split(" (")[0]
+
+    @property
+    def cmap(self) -> str:
+        return "RdYlGn" if self.better == "higher" else "RdYlGn_r"
+
+    @property
+    def direction(self) -> str:
+        return f"{self.better} = better"
+
+
+METRICS = {
+    "wall_s_mean":      Metric("wall time (s)", 1.0, ".2f", "lower", "wall_time"),
+    "unzip_wall_ms":    Metric("decompression time (s)", 1e-3, ".2f", "lower", "decompression"),
+    "read_payload_mib": Metric("bytes read (MiB)", 1.0, ".1f", "lower", "read_payload"),
+    "n_page_read":      Metric("pages read", 1.0, ".0f", "lower", "pages_read"),
+    # The amplifications are ratios of like units, so they carry no unit of their
+    # own; the axis says so rather than leaving a reader to guess at bytes.
+    "decomp_amplification":    Metric("decompressed / wanted bytes (x)", 1.0, ".2f", "lower",
+                                      "decomp_amplification", log=True),
+    "unzip_gb_s":              Metric("decompression throughput (GB/s)", 1.0, ".2f", "higher",
+                                      "decomp_throughput"),
+    "page_read_amplification": Metric("pages fetched / pages in file (x)", 1.0, ".2f", "lower",
+                                      "page_read_amplification", log=True),
+    "page_unseal_amplification": Metric("pages unzipped / pages in file (x)", 1.0, ".2f",
+                                        "lower", "page_unseal_amplification", log=True),
 }
+
+# The read-cost ratios, the default panels of the event-size figure. Pages
+# fetched and pages unzipped are both kept: one is I/O, the other is CPU,
+# and they move independently.
+RATIO_METRICS = ["decomp_amplification",
+                 "page_read_amplification", "page_unseal_amplification"]
 
 
 def read_summary(path: Path) -> list[dict]:
     with open(path, newline="") as f:
-        return list(csv.DictReader(f))
+        rows = list(csv.DictReader(f))
+    # Fold the distance into access_pattern rather than adding an axis: every
+    # plot groups by access_pattern, so scatter distances separate everywhere at
+    # once, and non-scatter rows keep a single value instead of a facet of NAs.
+    for r in rows:
+        if r.get("access_pattern") == "scatter":
+            r["access_pattern"] = f"scatter-{r.get('scatter_distance', '?')}"
+    return rows
 
 
 def _first_manifest(run_dir: Path) -> dict | None:
@@ -76,6 +103,62 @@ def run_payload_mib(run_dir: Path) -> float | None:
     return manifest.get("avg_raw_payload_mib") if manifest else None
 
 
+def run_column_pages(run_dir: Path) -> int | None:
+    """Pages in the widest column of the files this run read (a particle
+    parameter, where all but a handful of a file's pages live), from the
+    columns.json fgs_inspect_columns writes. None if that pass has not run."""
+    path = run_dir / "columns.json"
+    if not path.exists():
+        return None
+    try:
+        by_file = json.loads(path.read_text())
+    except json.JSONDecodeError:
+        return None
+    pages = [n for containers in by_file.values()
+             for columns in containers.values() for n in columns.values()]
+    return max(pages) if pages else None
+
+
+def run_events_per_page(run_dir: Path) -> float | None:
+    """Events covered by one page of the widest column: the dataset's event
+    count over that column's page count. None if either is unavailable."""
+    manifest = _first_manifest(run_dir)
+    pages = run_column_pages(run_dir)
+    if manifest is None or not pages or "total_events" not in manifest:
+        return None
+    return manifest["total_events"] / pages
+
+
+def fmt_events_per_page(v: float) -> str:
+    """Ticks and labels: whole events once a page holds ten of them, two
+    decimals below that, where a page covers a fraction of an event."""
+    return f"{v:,.0f}" if v >= 10 else f"{v:.2f}"
+
+
+@functools.lru_cache(maxsize=None)
+def sweep_runs(sweep_root: Path) -> tuple[tuple[Path, float, float], ...]:
+    """(summary.csv, events_per_page, page_mib) per run under the sweep root.
+
+    A run with no manifest or no columns.json cannot be placed on the x axis.
+    Dropping it is reported, so a cleaned dataset cannot pass for a smaller study.
+    """
+    runs, skipped = [], []
+    for summary in sorted(sweep_root.glob("**/summary.csv")):
+        run_dir = summary.parent
+        events_per_page = run_events_per_page(run_dir)
+        if events_per_page is None:
+            skipped.append(run_dir)
+            continue
+        page = run_max_page_size(run_dir)
+        runs.append((summary, events_per_page, page["mib"] if page else 0.0))
+    if skipped:
+        print(f"sweep_runs: skipping {len(skipped)} run(s) with no readable manifest or no "
+              f"columns.json (run fgs_inspect_columns over them):", file=sys.stderr)
+        for run_dir in skipped:
+            print(f"  {run_dir}", file=sys.stderr)
+    return tuple(runs)
+
+
 def run_generation_summary(run_dir: Path) -> dict | None:
     """Events generated + realized particles/event range. None if not found."""
     manifest = _first_manifest(run_dir)
@@ -86,6 +169,16 @@ def run_generation_summary(run_dir: Path) -> dict | None:
         "particles_min": manifest["particles_per_event_min"],
         "particles_max": manifest["particles_per_event_max"],
     }
+
+
+def container_summary(rows: list[dict]) -> str | None:
+    """Which containers were read, e.g. "1 container (position_container)".
+    None when the rows predate the column, or disagree."""
+    values = {r.get("containers") for r in rows}
+    if len(values) != 1 or not (names := values.pop()):
+        return None
+    read = names.split("|")
+    return f"{len(read)} container{'s' if len(read) > 1 else ''} ({' + '.join(read)})"
 
 
 MAX_PAGE_LINE = re.compile(r"^max_page_size\s*:\s*(\d+) bytes", re.M)
@@ -153,15 +246,5 @@ def distinct(rows: list[dict], col: str) -> list[str]:
 def fmt(metric: str, v: float) -> str:
     if math.isnan(v):
         return "--"
-    if metric == "wall_s_mean":
-        return f"{v:.4f}"
-    if metric == "read_efficiency":
-        return f"{v:.3f}"
-    if metric in ("throughput_evt_s_mean", "n_read"):
-        return f"{v:.0f}"
-    if metric in ("read_wall_ms", "unzip_wall_ms", "read_payload_mib",
-                  "locate_ms", "load_ms", "fill_ms"):
-        return f"{v:.2f}"
-    if metric in ("n_page_read", "n_page_unsealed", "n_cluster_loaded"):
-        return f"{v:.0f}"
-    return f"{v:.1f}"
+    spec = METRICS[metric].fmt if metric in METRICS else ".1f"
+    return f"{v:{spec}}"

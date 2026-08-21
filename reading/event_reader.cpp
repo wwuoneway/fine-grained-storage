@@ -1,7 +1,8 @@
 #include "fgs/event_reader.hpp"
 
-#include <chrono>
+#include <algorithm>
 #include <iostream>
+#include <limits>
 #include <set>
 #include <stdexcept>
 #include <utility>
@@ -12,11 +13,48 @@
 #include <TFile.h>
 #include <TTree.h>
 
+#include "fgs/token.hpp"
+
 namespace fgs {
+
+  namespace {
+
+    constexpr std::uint64_t kNoEntry = std::numeric_limits<std::uint64_t>::max();
+
+    // Storage width of everything below `field`, which for a collection field is
+    // its elements and excludes the offset column the field itself owns.
+    std::uint64_t payload_bits(ROOT::RNTupleDescriptor const& desc,
+                               ROOT::RFieldDescriptor const& field)
+    {
+      std::uint64_t bits = 0;
+      for (auto const& sub : desc.GetFieldIterable(field)) {
+        for (auto const& col : desc.GetColumnIterable(sub)) {
+          // Alternate representations of one column describe the same values.
+          if (col.GetRepresentationIndex() == 0)
+            bits += col.GetBitsOnStorage();
+        }
+        bits += payload_bits(desc, sub);
+      }
+      return bits;
+    }
+
+    std::string join(std::vector<std::string> const& names)
+    {
+      std::string out;
+      for (std::string const& name : names) {
+        if (!out.empty())
+          out += ", ";
+        out += name;
+      }
+      return out;
+    }
+
+  }
 
   EventReader::EventReader(std::filesystem::path const& root_file,
                            std::string const& index_name,
-                           ROOT::RNTupleReadOptions opts)
+                           ROOT::RNTupleReadOptions opts,
+                           std::vector<std::string> const& products)
     : root_file_(root_file), opts_(std::move(opts))
   {
     auto file = std::unique_ptr<TFile>(TFile::Open(root_file_.c_str(), "READ"));
@@ -28,42 +66,84 @@ namespace fgs {
       throw std::runtime_error("EventReader: index TTree \"" + index_name + "\" not found in " +
                                root_file_.string());
 
-    // One sequential scan builds the event -> tokens map and collects the product
-    // and container names. After this the TTree is never accessed again.
+    // One sequential scan collects the row numbers and the container each product
+    // lives in; the TTree is never touched again. The product set is only known
+    // once the scan ends, so rows are gathered per product and flattened below.
     std::uint64_t ev = 0;
     EventIndex* iv = nullptr;
     index->SetBranchAddress("event_id", &ev);
     index->SetBranchAddress("index_value", &iv);
 
-    std::set<std::string> products;
-    std::set<std::string> containers;
+    std::map<std::string, std::string> container_of;
+    std::map<std::string, std::size_t> column_of;
+    std::vector<std::vector<std::uint64_t>> columns;
+    std::vector<bool> seen;
+    std::uint64_t distinct = 0;
+
     Long64_t const n = index->GetEntries();
     for (Long64_t i = 0; i < n; ++i) {
       index->GetEntry(i);
       if (!iv)
         continue;
-      index_[ev] = *iv;
+      if (seen.size() <= ev)
+        seen.resize(ev + 1, false);
+      if (!seen[ev]) {
+        seen[ev] = true;
+        ++distinct;
+      }
       for (auto const& [product, token] : *iv) {
-        products.insert(product);
-        containers.insert(token.container);
+        container_of.emplace(product, token.container);
+        auto const [cit, added] = column_of.emplace(product, columns.size());
+        if (added)
+          columns.emplace_back();
+        std::vector<std::uint64_t>& column = columns[cit->second];
+        if (column.size() <= ev)
+          column.resize(ev + 1, kNoEntry);
+        column[ev] = token.entry;
       }
     }
     index->ResetBranchAddresses();
 
     // Count distinct events, not index entries, and demand a dense id range so a
     // mismatch fails here rather than as "event not found" mid-benchmark.
-    num_events_ = static_cast<std::uint64_t>(index_.size());
+    num_events_ = distinct;
     for (std::uint64_t id = 0; id < num_events_; ++id)
-      if (index_.find(id) == index_.end())
+      if (id >= seen.size() || !seen[id])
         throw std::runtime_error("EventReader: index in " + root_file_.string() + " has " +
                                  std::to_string(num_events_) + " distinct events but event id " +
                                  std::to_string(id) + " is missing (ids must cover [0, N))");
-    product_names_.assign(products.begin(), products.end());
+
+    for (auto const& [product, container] : container_of)
+      product_names_.push_back(product);
+
+    if (!products.empty()) {
+      for (std::string const& product : products)
+        if (container_of.find(product) == container_of.end())
+          throw std::runtime_error("EventReader: product \"" + product + "\" requested but not in " +
+                                   root_file_.string() +
+                                   " (available: " + join(product_names_) + ")");
+      std::set<std::string> const selected(products.begin(), products.end());
+      product_names_.assign(selected.begin(), selected.end());
+    }
+
+    std::size_t const n_products = product_names_.size();
+    entries_.assign(num_events_ * n_products, kNoEntry);
+    for (std::size_t p = 0; p < n_products; ++p) {
+      std::vector<std::uint64_t> const& column = columns[column_of.at(product_names_[p])];
+      std::uint64_t const rows = std::min<std::uint64_t>(num_events_, column.size());
+      for (std::uint64_t id = 0; id < rows; ++id)
+        entries_[id * n_products + p] = column[id];
+    }
+    columns.clear();
+    columns.shrink_to_fit();
 
     // Open every container up front so read_product pays no open cost inside the
-    // timed loop.
-    for (std::string const& name : containers)
-      container_for(name);
+    // timed loop, and bind one per product so the read path never looks up a name.
+    for (std::string const& product : product_names_) {
+      Container& c = container_for(container_of.at(product));
+      product_containers_.push_back(&c);
+      product_element_bytes_.push_back(c.element_bytes);
+    }
   }
 
   EventReader::~EventReader() = default;
@@ -87,6 +167,7 @@ namespace fgs {
         continue;
       field_name = field.GetFieldName();
       type_name = field.GetTypeName();
+      c.element_bytes = payload_bits(c.reader->GetDescriptor(), field) / 8;
       break;
     }
 
@@ -101,55 +182,35 @@ namespace fgs {
     return containers_.emplace(name, std::move(c)).first->second;
   }
 
-  Token const& EventReader::locate(std::uint64_t event_id, std::string const& product)
+  EventReader::Location EventReader::locate(std::uint64_t event_id,
+                                            std::string const& product) const
   {
-    auto eit = index_.find(event_id);
-    if (eit == index_.end())
+    if (event_id >= num_events_)
       throw std::runtime_error("EventReader: event " + std::to_string(event_id) +
                                " not found in index");
-    auto pit = eit->second.find(product);
-    if (pit == eit->second.end())
-      throw std::runtime_error("EventReader: product \"" + product + "\" not found for event " +
-                               std::to_string(event_id));
-    return pit->second;
+
+    auto const missing = [&] {
+      return std::runtime_error("EventReader: product \"" + product + "\" not found for event " +
+                                std::to_string(event_id));
+    };
+
+    auto const it = std::lower_bound(product_names_.begin(), product_names_.end(), product);
+    if (it == product_names_.end() || *it != product)
+      throw missing();
+
+    std::size_t const p = static_cast<std::size_t>(it - product_names_.begin());
+    std::uint64_t const entry = entries_[event_id * product_names_.size() + p];
+    if (entry == kNoEntry)
+      throw missing();
+    return {entry, p};
   }
 
-  std::vector<float> EventReader::read_product(std::uint64_t event_id, std::string const& product)
+  std::size_t EventReader::read_product(std::uint64_t event_id, std::string const& product)
   {
-    using clock = std::chrono::steady_clock;
-    auto const ns = [](auto d) { return std::chrono::duration<double, std::nano>(d).count(); };
-
-    clock::time_point t0;
-    if (instrument_) t0 = clock::now();
-    Token const& token = locate(event_id, product);
-    Container& c = container_for(token.container);
-    if (instrument_) timers_.locate_ns += ns(clock::now() - t0);
-
-    clock::time_point tl;
-    if (instrument_) tl = clock::now();
-    c.reader->LoadEntry(token.entry); // whole-row read: refreshes the bound vector
-    if (instrument_) timers_.load_ns += ns(clock::now() - tl);
-
-    clock::time_point tf;
-    if (instrument_) tf = clock::now();
-    std::vector<float> out;
-    if (c.pos) {
-      out.reserve(c.pos->size() * 3);
-      for (Position const& p : *c.pos) {
-        out.push_back(p.x);
-        out.push_back(p.y);
-        out.push_back(p.z);
-      }
-    } else {
-      out.reserve(c.mom->size() * 3);
-      for (Momentum const& m : *c.mom) {
-        out.push_back(m.px);
-        out.push_back(m.py);
-        out.push_back(m.pz);
-      }
-    }
-    if (instrument_) timers_.fill_ns += ns(clock::now() - tf);
-    return out;
+    Location const loc = locate(event_id, product);
+    Container& c = *product_containers_[loc.product];
+    c.reader->LoadEntry(loc.entry); // whole-row read: refreshes the bound vector
+    return c.pos ? c.pos->size() : c.mom->size();
   }
 
   std::map<std::string, EventReader::ContainerFacts> EventReader::dataset_facts() const

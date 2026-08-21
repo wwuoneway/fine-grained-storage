@@ -1,72 +1,31 @@
-# =========================
-# Build directories
-# =========================
 build/
-
-# =========================
-# Logs / runtime outputs
-# =========================
 *.log
 
-# =========================
-# Python
-# =========================
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 .venv/
 
-# =========================
-# Editor / machine-specific
-# =========================
 .vscode/
 .idea/
-
-# =========================
-# OS files
-# =========================
 .DS_Store
 Thumbs.db
-
-# =========================
-# Temporary files
-# =========================
 *.tmp
 *.temp
 *.swp
 
-# Documentation for internal development, not needed in the repository
-docs.me/
-
-# =========================
-# Generated benchmark data
-# =========================
-# Phase 1 writes all synthetic input data under output/ (configurable via the
-# "output_dir" config key). It is generated at runtime and must never be
-# committed.
-output/
-
 .env
-
-# Local AI-agent / editor tooling; never commit.
 .claude/
 .agents/
 .codex/
+docs.me/
 
-# Study configs are regenerated from an axes file by scripts/studygen on each
-# run; none of them are tracked.
+output/
 configs/generation/auto-generated/
 configs/writing/auto-generated/
 configs/benchmarks/auto-generated/
 
-# axes.json (and any axes-*.json variant) is a local, machine-tuned study
-# matrix, same idea as .env vs .env.example. Loose files directly under
-# configs/study/ are ignored except the template. Reproducible variants meant
-# to be shared belong in the tracked configs/study/shared/ subdirectory instead,
-# which this pattern does not reach.
+# A loose axes file here is a local, machine-tuned matrix (same idea as .env vs
+# .env.example); shareable ones go in configs/study/shared/, which this misses.
 configs/study/*.json
-!configs/study/axes-example.json
-
-# CMake build trees (also covered by build/ above, listed here for clarity).
-build/

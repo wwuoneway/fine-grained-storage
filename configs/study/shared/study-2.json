@@ -17,7 +17,10 @@
   },
   "generation": [
     { "num_events": 1638400, "particles": { "min": 64, "max": 64 } },
+    { "num_events": 409600, "particles": { "min": 256, "max": 256 } },
     { "num_events": 102400, "particles": { "min": 1024, "max": 1024 } },
+    { "num_events": 25600, "particles": { "min": 4096, "max": 4096 } },
+    { "num_events": 6400, "particles": { "min": 16384, "max": 16384 } },
     { "num_events": 1600, "particles": { "min": 65536, "max": 65536 } },
     { "num_events": 400, "particles": { "min": 262144, "max": 262144 } }
   ],
@@ -33,8 +36,8 @@
     "access_seed": 1234,
     "products": ["momentum"],
     "cache": ["cold"],
-    "cluster_cache": ["off"],
+    "cluster_cache": ["on"],
     "implicit_mt": ["off"],
-    "repetitions": 2
+    "repetitions": 1
   }
 }

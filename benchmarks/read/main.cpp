@@ -1,6 +1,6 @@
-// Read benchmark entry point: load the benchmark config, set up a fresh run
-// folder, and run each enabled case serially. All measurement lives in
-// bench_runner; this file is orchestration only.
+// Read benchmark entry point: load the benchmark config, set up the run folder
+// the caller named, and run each enabled case serially. All measurement lives
+// in bench_runner; this file is orchestration only.
 
 #include <filesystem>
 #include <fstream>
@@ -16,18 +16,18 @@ namespace fs = std::filesystem;
 
 int main(int argc, char** argv)
 {
-  fs::path config_path =
-    argc > 1 ? fs::path{argv[1]} : fs::path{"configs/benchmarks/reading_benchmarks.json"};
+  if (argc < 3) {
+    std::cerr << "usage: fgs_read_bench <config.json> <run_dir>\n";
+    return 1;
+  }
+  fs::path const config_path{argv[1]};
 
   try {
     nlohmann::json config = fgs::bench::load_json(config_path);
 
-    // Each invocation gets its own timestamped run folder under a fixed base, so
-    // re-running any config never overwrites earlier results. The run root holds
-    // the shared run_info.json (specs + config) and summary.csv; each benchmark
-    // gets its own self-contained subfolder.
-    fs::path const base = "output/benchmarks/reading-benchmarks";
-    fs::path const run_dir = base / fgs::bench::timestamp_now();
+    // The run root holds the shared run_info.json and summary.csv; each
+    // benchmark gets its own self-contained subfolder beneath it.
+    fs::path const run_dir{argv[2]};
     fs::create_directories(run_dir);
 
     std::ofstream summary_csv(run_dir / "summary.csv");

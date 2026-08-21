@@ -29,6 +29,7 @@ namespace fgs::bench {
     double read_wall_ms = 0.0;    // timeWallRead: wall time in storage I/O
     double unzip_wall_ms = 0.0;   // timeWallUnzip: wall time decompressing
     double read_payload_mib = 0.0; // szReadPayload: bytes pulled from storage
+    double unzip_mib = 0.0;       // szUnzip: bytes handed back after decompression
     std::uint64_t n_read = 0;     // nRead: number of byte-range reads (seeks)
     double read_efficiency = std::numeric_limits<double>::quiet_NaN(); // payload / (payload + overhead)
     std::uint64_t n_page_read = 0;      // nPageRead: sealed pages fetched from storage
@@ -47,22 +48,11 @@ namespace fgs::bench {
     double wall_s = 0.0;
     double latency_us_per_event = 0.0;
     double throughput_evt_s = 0.0;
-    std::uint64_t total_values = 0;
+    std::uint64_t total_elements = 0;
+    // Denominator of the decompression amplification.
+    std::uint64_t wanted_bytes = 0;
     // ROOT RNTuple counters for this pass (only when metrics are enabled).
     ReadCounters counters;
-    // "Other"-segment breakdown from the instrumented pass (ms).
-    double locate_ms = 0.0;
-    double load_ms = 0.0;
-    double fill_ms = 0.0;
-    // Wall of the instrumented pass itself: the sub-timers are nested inside
-    // this wall (not wall_s, which is a different execution), so residuals
-    // against it stay non-negative.
-    double wall_instr_ms = 0.0;
-    // ROOT counters from the instrumented pass itself: the fine bottleneck
-    // split (decode = load - read - unzip) must subtract counters measured on
-    // the same execution as load_ms, not the clean pass's.
-    double read_wall_instr_ms = 0.0;
-    double unzip_wall_instr_ms = 0.0;
   };
 
   // A benchmark's identity and configuration, used across the CSV rows and the
@@ -73,17 +63,23 @@ namespace fgs::bench {
     std::string description;
     std::string variant;
     std::string access_pattern;
+    std::uint64_t scatter_distance = 0;
     std::string cache_state;
     std::string cluster_cache;
     std::string implicit_mt;
+    std::string containers; // the containers read, names joined with '|'
     std::uint64_t num_events = 0;
     std::uint64_t repetitions = 0;
     std::string root_file;
     std::string manifest_file;
     std::uint64_t max_page_size_bytes = 0;
+    std::uint64_t scatter_seed = 0;
+    // Realized displacement of the scatter order, zero for every other pattern.
+    double scatter_mean_displacement = 0.0;
+    std::uint64_t scatter_max_displacement = 0;
   };
 
-  std::string timestamp_now();   // YYYYmmdd-HHMMSS (for run-directory names)
+  std::string timestamp_now();   // YYYYmmdd-HHMMSS
   std::string timestamp_human(); // YYYY-MM-DD HH:MM:SS (for readable reports)
 
   // Machine description (CPU, cores, RAM, kernel, ROOT version) as JSON.
@@ -104,9 +100,12 @@ namespace fgs::bench {
                      std::vector<Measurement> const& reps);
 
   // Append one aggregated (mean/min) row for a benchmark to summary.csv.
+  // `dataset_pages` is the on-disk page count of the containers read; zero
+  // leaves the page amplification columns empty.
   void append_summary_row(std::ostream& csv,
                           BenchmarkId const& id,
-                          std::vector<Measurement> const& reps);
+                          std::vector<Measurement> const& reps,
+                          std::uint64_t dataset_pages = 0);
 
   // Human-readable per-benchmark files. `dataset_facts` is keyed by container
   // name; empty when not available (e.g. facts weren't collected).
@@ -114,7 +113,8 @@ namespace fgs::bench {
                                 std::map<std::string, ContainerFacts> const& dataset_facts = {});
   void write_benchmark_summary_txt(std::filesystem::path const& path,
                                    BenchmarkId const& id,
-                                   std::vector<Measurement> const& reps);
+                                   std::vector<Measurement> const& reps,
+                                   std::uint64_t dataset_pages = 0);
 
   // Reformat ROOT's pipe-delimited kMetrics dump into an aligned table string
   // (empty in -> empty out).

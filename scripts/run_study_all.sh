@@ -1,161 +1,278 @@
 #!/usr/bin/env bash
 #
-# run_study_all.sh  -- benchmark every tier (Spack ON), then plot every run it
-# produced (Spack OFF). Spack is only activated inside the phase-1 subshell, and
-# plots run under `env -i`, so the two opposite environments never collide.
+# Run the whole study from one axes file: for each dataset, write and
+# read-benchmark every page size, then plot. Generation and writing are reused
+# when their inputs have not changed; the benchmarks always run.
 #
-# Per (dataset, wopts) combo: fgs_generate -> fgs_strategy_one -> sync ->
-# fgs_read_bench. Generate/write are skipped when their manifest already matches
-# the config; reads always make a fresh timestamped run dir. The sync flushes
-# dirty pages so cold-cache eviction (posix_fadvise) actually evicts them.
+# Usage: run_study_all.sh <axes.json>
 
 set -euo pipefail
 
-REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$REPO"
+readonly READ_BASE="output/benchmarks/reading-benchmarks"
+readonly STAMP_FILE=".stage-key"
+readonly CONFIG_GENERATOR="scripts/gen_study_configs.py"
 
-if [[ -f "$REPO/.env" ]]; then
-  # shellcheck disable=SC1091
-  source "$REPO/.env"
-else
-  echo "missing $REPO/.env -- copy .env.example to .env and set the paths" >&2
-  exit 1
-fi
-: "${FGS_SPACK_SETUP:?set FGS_SPACK_SETUP in .env}"
-: "${FGS_SPACK_ENV:?set FGS_SPACK_ENV in .env}"
-
-# Which study matrix to run. Defaults to axes.json; pass a variant as $1
-# (e.g. configs/study/axes-1-event.json) to drive the whole pipeline from it.
-AXES="${1:-configs/study/axes.json}"
-[[ -f "$AXES" ]] || { echo "axes file not found: $AXES" >&2; exit 1; }
-
-BUILD="$REPO/build"
-GEN_EXE="$BUILD/generation/fgs_generate"
-WRITE_EXE="$BUILD/writing/fgs_strategy_one"
-READ_EXE="$BUILD/benchmarks/read/fgs_read_bench"
-READ_BASE="output/benchmarks/reading-benchmarks"
-for exe in "$GEN_EXE" "$WRITE_EXE" "$READ_EXE"; do
-  [[ -x "$exe" ]] || { echo "missing executable: $exe -- build first" >&2; exit 1; }
-done
-
-PLOT_PY="$REPO/.venv/bin/python3"
-[[ -x "$PLOT_PY" ]] || {
-  echo "missing $PLOT_PY -- run: python3 -m venv .venv && .venv/bin/pip install -r requirements.txt" >&2
+die() {
+  printf 'run_study_all: %s\n' "$*" >&2
   exit 1
 }
 
-# exit 0 = manifest matches config = safe to skip this stage. The manifest
-# stores the full generation config, so compare the whole block: any field
-# (num_events, seed, particles, position, momentum, ...) that differs forces a
-# regen. A field-by-field list here would silently skip position/momentum edits.
-gen_matches() {  # $1 gen manifest.json   $2 generation config.json
-  python3 - "$1" "$2" <<'PY'
-import json, sys
-man = json.load(open(sys.argv[1])).get("config", {})
-cfg = json.load(open(sys.argv[2]))
-sys.exit(0 if man == cfg else 1)
-PY
+info() {
+  printf '%s\n' "$*"
 }
 
-write_matches() {  # $1 write manifest.json   $2 writing config.json
-  python3 - "$1" "$2" <<'PY'
-import json, sys
-man = json.load(open(sys.argv[1]))
-cfg = json.load(open(sys.argv[2]))
-man_variants = sorted(v["name"] for v in man.get("variants", []))
-cfg_variants = sorted(cfg["variants"])
-seed_ok = all(
-    v.get("shuffle_seed") == cfg["shuffle_seed"]
-    for v in man.get("variants", [])
-    if v["name"] == "shuffle"
-)
-# Write options change the physical layout, so reusing a .root across a change
-# is wrong. Absent on both sides is "all ROOT defaults" and still matches.
-opts_ok = man.get("write_options", {}) == cfg.get("write_options", {})
-sys.exit(0 if (man_variants == cfg_variants and seed_ok and opts_ok) else 1)
-PY
+step() {
+  printf '\n=== %s ===\n' "$*"
 }
 
-mapfile -t TIERS < <(
-  /usr/bin/python3 -c "import json,sys; [print(t) for t in json.load(open(sys.argv[1]))['tiers']]" "$AXES"
-)
-[[ ${#TIERS[@]} -gt 0 ]] || { echo "no tiers in $AXES" >&2; exit 1; }
+format_duration() {
+  local total=$1
+  printf '%d:%02d:%02d' $(( total / 3600 )) $(( total % 3600 / 60 )) $(( total % 60 ))
+}
 
-# Marker mtime pins "now"; find -newer later grabs only this run's dirs.
-marker="$(mktemp)"
-trap 'rm -f "$marker"' EXIT
+require_file() {
+  [[ -f "$1" ]] || die "${2:-missing file}: $1"
+}
 
-echo "=== phase 1: benchmarks -- tiers: ${TIERS[*]} ==="
-(
+require_executable() {
+  [[ -x "$1" ]] || die "${2:-missing executable}: $1"
+}
+
+require_directory() {
+  [[ -d "$1" ]] || die "${2:-missing directory}: $1"
+}
+
+load_dotenv() {
+  local env_file="$REPO/.env"
+  require_file "$env_file" "missing .env -- copy .env.example and set the paths"
   # shellcheck disable=SC1090
-  source "$FGS_SPACK_SETUP"
-  spack env activate "$FGS_SPACK_ENV"
+  source "$env_file"
+  : "${FGS_SPACK_SETUP:?set FGS_SPACK_SETUP in .env}"
+  : "${FGS_SPACK_ENV:?set FGS_SPACK_ENV in .env}"
+}
 
-  # Regenerate the study configs from axes.json so they can never be stale
-  # (they are gitignored / not tracked).
-  python3 scripts/gen_study_configs.py --axes "$AXES" >/dev/null
+# Pinning the measured binary keeps core placement constant across the sweep,
+# which matters on a hybrid CPU.
+resolve_cpu_pinning() {
+  PIN=()
+  [[ -n "${FGS_BENCH_CPUS:-}" ]] || return 0
+  command -v taskset >/dev/null 2>&1 \
+    || die "FGS_BENCH_CPUS is set but taskset is not available"
+  PIN=(taskset -c "$FGS_BENCH_CPUS")
+}
 
-  # Precompute every tier's combos up front so we know the total run count
-  # before starting; the counter below is what keeps a long run legible.
-  declare -A tier_combos
-  total=0
-  for tier in "${TIERS[@]}"; do
-    combos="$(python3 scripts/gen_study_configs.py --axes "$AXES" --list "$tier")"
-    [[ -n "$combos" ]] || { echo "no combos for tier '$tier'" >&2; exit 1; }
-    tier_combos["$tier"]="$combos"
-    total=$(( total + $(wc -l <<< "$combos") ))
+check_prerequisites() {
+  local axes="$1"
+
+  (( BASH_VERSINFO[0] >= 4 )) || die "needs bash 4 or newer, found $BASH_VERSION"
+
+  # Checked before init_spack, which sets SPACK_ROOT itself. An already-active
+  # environment would leak its interpreter into $PLOT_PY.
+  [[ -z "${SPACK_ENV:-}" ]] \
+    || die "Spack environment '$SPACK_ENV' is active; run from a shell without one"
+
+  load_dotenv
+  require_file "$axes" "axes file not found"
+
+  BUILD="$REPO/build"
+  GEN_EXE="$BUILD/generation/fgs_generate"
+  WRITE_EXE="$BUILD/writing/fgs_strategy_one"
+  READ_EXE="$BUILD/benchmarks/read/fgs_read_bench"
+  INSPECT_EXE="$BUILD/tools/fgs_inspect_columns"
+  local exe
+  for exe in "$GEN_EXE" "$WRITE_EXE" "$READ_EXE" "$INSPECT_EXE"; do
+    require_executable "$exe" "missing executable -- build first"
   done
-  echo "--- $total benchmark(s) to run ---"
 
-  done_count=0
-  for tier in "${TIERS[@]}"; do
-    combos="${tier_combos[$tier]}"
+  PLOT_PY="$REPO/.venv/bin/python3"
+  require_executable "$PLOT_PY" \
+    "missing plotting venv -- run: python3 -m venv .venv && .venv/bin/pip install -r requirements.txt"
+  require_file "$CONFIG_GENERATOR" "missing config generator"
 
-    while IFS=$'\t' read -r ds w gen_cfg write_cfg bench_cfg gen_out write_out; do
-      [[ -n "$ds" ]] || continue
-      done_count=$(( done_count + 1 ))
-      echo "--- [$done_count/$total] $tier: $ds / $w ---"
+  resolve_cpu_pinning
 
-      gen_changed=0
-      if [[ -f "$gen_out/manifest.json" ]] && gen_matches "$gen_out/manifest.json" "$gen_cfg"; then
-        echo "SKIP   gen    $ds"
-      else
-        echo "BUILD  gen    $ds"
-        rm -rf "$gen_out"
-        "$GEN_EXE" "$gen_cfg"
-        gen_changed=1
-      fi
+  GEN_DIGEST="$(sha256sum "$GEN_EXE" | cut -d' ' -f1)"
+  WRITE_DIGEST="$(sha256sum "$WRITE_EXE" | cut -d' ' -f1)"
+}
 
-      # A regen invalidates any .root written from the old inputs, so force the
-      # write step whenever gen changed, even if its own config still matches.
-      if [[ $gen_changed -eq 0 ]] \
-         && [[ -f "$write_out/manifest.json" ]] \
-         && write_matches "$write_out/manifest.json" "$write_cfg"; then
-        echo "SKIP   write  $ds/$w"
-      else
-        echo "BUILD  write  $ds/$w"
-        rm -rf "$write_out"
-        "$WRITE_EXE" "$write_cfg"
-      fi
+init_spack() {
+  # shellcheck disable=SC1090
+  source "$FGS_SPACK_SETUP" \
+    || die "cannot source FGS_SPACK_SETUP: $FGS_SPACK_SETUP"
+  command -v spack >/dev/null 2>&1 \
+    || die "spack is not on PATH after sourcing $FGS_SPACK_SETUP"
 
-      sync
-      "$READ_EXE" "$bench_cfg"
-    done <<< "$combos"
+  local env_dir
+  env_dir="$(spack location -e "$FGS_SPACK_ENV")" \
+    || die "unknown Spack environment: $FGS_SPACK_ENV"
+  SPACK_VIEW="$env_dir/.spack-env/view"
+  require_directory "$SPACK_VIEW" "Spack environment has no view"
+}
+
+# Scoped to the launched binary so the plotting virtualenv never sees Spack. The
+# exes carry a RUNPATH here already; this covers a build linked without one.
+run_in_env() {
+  LD_LIBRARY_PATH="$SPACK_VIEW/lib/root:$SPACK_VIEW/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" "$@"
+}
+
+studygen() {
+  local axes="$1" sweep="$2"
+  shift 2
+  "$PLOT_PY" "$CONFIG_GENERATOR" --axes "$axes" --sweep "$sweep" "$@"
+}
+
+# Reuse needs the config, the binary consuming it, and everything upstream to be
+# unchanged; the upstream key is folded in so a changed dataset rewrites the .root.
+stage_key() {  # $1 config  $2 exe digest  [$3 upstream key]
+  "$PLOT_PY" -c '
+import hashlib, json, sys
+canon = json.dumps(json.load(open(sys.argv[1])), sort_keys=True, separators=(",", ":"))
+print(hashlib.sha256((canon + sys.argv[2] + sys.argv[3]).encode()).hexdigest())
+' "$1" "$2" "${3-}"
+}
+
+stage_is_current() {  # $1 output dir  $2 expected key
+  local recorded
+  [[ -r "$1/$STAMP_FILE" ]] || return 1
+  read -r recorded < "$1/$STAMP_FILE"
+  [[ "$recorded" == "$2" ]]
+}
+
+mark_stage_current() {  # $1 output dir  $2 key
+  require_directory "$1" "stage produced no output directory"
+  printf '%s\n' "$2" > "$1/$STAMP_FILE"
+}
+
+# Deferred until a write actually needs the .bin, so they can be deleted to
+# reclaim space while the .root files stay reusable.
+ensure_dataset_generated() {
+  local ds="$1" gen_cfg="$2" gen_dir="$3" gen_key="$4"
+
+  [[ -z "${GENERATED_DATASETS[$ds]:-}" ]] || return 0
+
+  if stage_is_current "$gen_dir" "$gen_key"; then
+    info "reuse  gen    $ds"
+  else
+    rm -rf -- "$gen_dir"
+    run_in_env "$GEN_EXE" "$gen_cfg"
+    mark_stage_current "$gen_dir" "$gen_key"
+  fi
+  GENERATED_DATASETS["$ds"]=1
+}
+
+write_root_files() {
+  local ds="$1" wopts="$2" write_cfg="$3" write_dir="$4" write_key="$5"
+
+  if stage_is_current "$write_dir" "$write_key"; then
+    info "reuse  write  $ds/$wopts"
+    return 0
+  fi
+
+  rm -rf -- "$write_dir"
+  run_in_env "$WRITE_EXE" "$write_cfg"
+  mark_stage_current "$write_dir" "$write_key"
+}
+
+run_benchmark() {  # $1 bench cfg  $2 run dir
+  # posix_fadvise cannot evict pages that are still dirty.
+  sync
+  run_in_env ${PIN[@]+"${PIN[@]}"} "$READ_EXE" "$1" "$2"
+}
+
+# Between benchmarks, never during one, so plotting cannot perturb a measurement
+# while still making each dataset readable as soon as it lands.
+plot_dataset() {
+  local ds="$1" dataset_dir="$2"
+  shift 2
+  local -a run_dirs=("$@")
+
+  info "--- plots for $ds ---"
+  local run_dir
+  for run_dir in "${run_dirs[@]}"; do
+    "$PLOT_PY" scripts/compare_matrix.py "$run_dir"
   done
-)
+  "$PLOT_PY" scripts/locality_curves.py --outdir "$dataset_dir" "${run_dirs[@]}" \
+    || info "locality curves skipped for $ds (no swept scatter)"
+}
 
-mapfile -t new_dirs < <(
-  find "$READ_BASE" -mindepth 1 -maxdepth 1 -type d -newer "$marker" | sort
-)
-[[ ${#new_dirs[@]} -gt 0 ]] || { echo "no new run dirs under $READ_BASE" >&2; exit 1; }
+process_dataset() {
+  local ds="$1" gen_cfg="$2" gen_dir="$3" dataset_dir="$4"
 
-echo
-echo "=== phase 2: plots -- ${#new_dirs[@]} run dir(s) ==="
-for d in "${new_dirs[@]}"; do
-  echo "--- plotting $d ---"
-  env -i PATH=/usr/bin:/bin HOME="$HOME" \
-    "$PLOT_PY" scripts/compare_matrix.py "$d"
-done
+  step "dataset $ds"
 
-echo
-echo "=== done: benchmarked all tiers + plotted ${#new_dirs[@]} run dir(s) ==="
+  local gen_key
+  gen_key="$(stage_key "$gen_cfg" "$GEN_DIGEST")"
+
+  local -a run_dirs=()
+  local combo_ds wopts write_cfg bench_cfg write_dir run_dir write_key
+  while IFS=$'\t' read -r combo_ds wopts write_cfg bench_cfg write_dir run_dir; do
+    [[ "$combo_ds" == "$ds" ]] || continue
+
+    DONE_COUNT=$(( DONE_COUNT + 1 ))
+    info "--- [$DONE_COUNT/$TOTAL] $ds / $wopts ---"
+
+    write_key="$(stage_key "$write_cfg" "$WRITE_DIGEST" "$gen_key")"
+    if ! stage_is_current "$write_dir" "$write_key"; then
+      ensure_dataset_generated "$ds" "$gen_cfg" "$gen_dir" "$gen_key"
+    fi
+    write_root_files "$ds" "$wopts" "$write_cfg" "$write_dir" "$write_key"
+
+    run_benchmark "$bench_cfg" "$run_dir"
+    # After the measurement, never before: reading the descriptor back would
+    # warm the page cache the benchmark just evicted.
+    run_in_env "$INSPECT_EXE" "$run_dir"
+    run_dirs+=("$run_dir")
+  done <<< "$COMBOS"
+
+  (( ${#run_dirs[@]} > 0 )) || die "no benchmarks matched dataset $ds"
+  plot_dataset "$ds" "$dataset_dir" "${run_dirs[@]}"
+}
+
+main() {
+  SECONDS=0
+  REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  cd "$REPO" || die "cannot enter repo root: $REPO"
+
+  local axes="${1:-}"
+  [[ -n "$axes" ]] || die "usage: run_study_all.sh <axes.json>"
+
+  check_prerequisites "$axes"
+  init_spack
+
+  local sweep
+  sweep="$READ_BASE/$(date +%Y%m%d-%H%M%S)"
+
+  # Emitted fresh every run so the configs can never describe a different sweep.
+  studygen "$axes" "$sweep" >/dev/null || die "failed to emit study configs from $axes"
+
+  local -a datasets=()
+  mapfile -t datasets < <(studygen "$axes" "$sweep" --list-datasets)
+  (( ${#datasets[@]} > 0 )) || die "no datasets in $axes"
+
+  COMBOS="$(studygen "$axes" "$sweep" --list)"
+  [[ -n "$COMBOS" ]] || die "no combos in $axes"
+  TOTAL="$(wc -l <<< "$COMBOS")"
+  DONE_COUNT=0
+  declare -gA GENERATED_DATASETS=()
+
+  step "${#datasets[@]} dataset(s), $TOTAL benchmark(s) -> $sweep"
+
+  local row ds gen_cfg gen_dir dataset_dir
+  for row in "${datasets[@]}"; do
+    IFS=$'\t' read -r ds gen_cfg gen_dir dataset_dir <<< "$row"
+    process_dataset "$ds" "$gen_cfg" "$gen_dir" "$dataset_dir"
+  done
+
+  # Compares datasets, so it can only run once they have all landed.
+  info "--- plots across datasets ---"
+  "$PLOT_PY" scripts/event_size_curves.py "$sweep" \
+    || info "event size curves not written, see the message above"
+  "$PLOT_PY" scripts/scatter_curves.py "$sweep" \
+    || info "scatter-distance curves not written, see the message above"
+  "$PLOT_PY" scripts/growth_curves.py "$sweep" \
+    || info "growth curves not written, see the message above"
+
+  step "done: $sweep ($TOTAL benchmark(s), took $(format_duration "$SECONDS"))"
+}
+
+main "$@"

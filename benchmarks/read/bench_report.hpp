@@ -29,6 +29,7 @@ namespace fgs::bench {
     double read_wall_ms = 0.0;    // timeWallRead: wall time in storage I/O
     double unzip_wall_ms = 0.0;   // timeWallUnzip: wall time decompressing
     double read_payload_mib = 0.0; // szReadPayload: bytes pulled from storage
+    double unzip_mib = 0.0;       // szUnzip: bytes handed back after decompression
     std::uint64_t n_read = 0;     // nRead: number of byte-range reads (seeks)
     double read_efficiency = std::numeric_limits<double>::quiet_NaN(); // payload / (payload + overhead)
     std::uint64_t n_page_read = 0;      // nPageRead: sealed pages fetched from storage
@@ -48,6 +49,8 @@ namespace fgs::bench {
     double latency_us_per_event = 0.0;
     double throughput_evt_s = 0.0;
     std::uint64_t total_elements = 0;
+    // Denominator of the decompression amplification.
+    std::uint64_t wanted_bytes = 0;
     // ROOT RNTuple counters for this pass (only when metrics are enabled).
     ReadCounters counters;
   };
@@ -97,9 +100,12 @@ namespace fgs::bench {
                      std::vector<Measurement> const& reps);
 
   // Append one aggregated (mean/min) row for a benchmark to summary.csv.
+  // `dataset_pages` is the on-disk page count of the containers read; zero
+  // leaves the page amplification columns empty.
   void append_summary_row(std::ostream& csv,
                           BenchmarkId const& id,
-                          std::vector<Measurement> const& reps);
+                          std::vector<Measurement> const& reps,
+                          std::uint64_t dataset_pages = 0);
 
   // Human-readable per-benchmark files. `dataset_facts` is keyed by container
   // name; empty when not available (e.g. facts weren't collected).
@@ -107,7 +113,8 @@ namespace fgs::bench {
                                 std::map<std::string, ContainerFacts> const& dataset_facts = {});
   void write_benchmark_summary_txt(std::filesystem::path const& path,
                                    BenchmarkId const& id,
-                                   std::vector<Measurement> const& reps);
+                                   std::vector<Measurement> const& reps,
+                                   std::uint64_t dataset_pages = 0);
 
   // Reformat ROOT's pipe-delimited kMetrics dump into an aligned table string
   // (empty in -> empty out).

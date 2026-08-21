@@ -21,6 +21,23 @@ namespace fgs {
 
     constexpr std::uint64_t kNoEntry = std::numeric_limits<std::uint64_t>::max();
 
+    // Storage width of everything below `field`, which for a collection field is
+    // its elements and excludes the offset column the field itself owns.
+    std::uint64_t payload_bits(ROOT::RNTupleDescriptor const& desc,
+                               ROOT::RFieldDescriptor const& field)
+    {
+      std::uint64_t bits = 0;
+      for (auto const& sub : desc.GetFieldIterable(field)) {
+        for (auto const& col : desc.GetColumnIterable(sub)) {
+          // Alternate representations of one column describe the same values.
+          if (col.GetRepresentationIndex() == 0)
+            bits += col.GetBitsOnStorage();
+        }
+        bits += payload_bits(desc, sub);
+      }
+      return bits;
+    }
+
     std::string join(std::vector<std::string> const& names)
     {
       std::string out;
@@ -122,8 +139,11 @@ namespace fgs {
 
     // Open every container up front so read_product pays no open cost inside the
     // timed loop, and bind one per product so the read path never looks up a name.
-    for (std::string const& product : product_names_)
-      product_containers_.push_back(&container_for(container_of.at(product)));
+    for (std::string const& product : product_names_) {
+      Container& c = container_for(container_of.at(product));
+      product_containers_.push_back(&c);
+      product_element_bytes_.push_back(c.element_bytes);
+    }
   }
 
   EventReader::~EventReader() = default;
@@ -147,6 +167,7 @@ namespace fgs {
         continue;
       field_name = field.GetFieldName();
       type_name = field.GetTypeName();
+      c.element_bytes = payload_bits(c.reader->GetDescriptor(), field) / 8;
       break;
     }
 

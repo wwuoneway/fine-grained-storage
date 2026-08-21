@@ -50,6 +50,10 @@ namespace fgs {
     // hard-coding which products a file holds.
     std::vector<std::string> const& product_names() const { return product_names_; }
 
+    // Decompressed bytes one element occupies, from the storage width of its
+    // container's payload columns. Parallel to product_names().
+    std::vector<std::size_t> const& product_element_bytes() const { return product_element_bytes_; }
+
     // Read one product's row for `event_id` via a whole-row LoadEntry, leaving the
     // values in the container's own buffer. Returns how many elements the row
     // holds. Throws if the event or product is unknown.
@@ -78,6 +82,7 @@ namespace fgs {
       std::unique_ptr<ROOT::RNTupleReader> reader;
       std::shared_ptr<std::vector<Position>> pos;
       std::shared_ptr<std::vector<Momentum>> mom;
+      std::size_t element_bytes = 0;
     };
 
     // Open a container reader and bind its vector field, or return the already
@@ -103,6 +108,7 @@ namespace fgs {
     // a product always lives in one container, so that is held per product.
     std::vector<std::uint64_t> entries_;
     std::vector<Container*> product_containers_;
+    std::vector<std::size_t> product_element_bytes_;
 
     std::map<std::string, Container> containers_;
   };

@@ -85,22 +85,32 @@ namespace fgs::bench {
       // the measured region (see access_order.hpp).
       std::unique_ptr<EventOrder> order = make_event_order(order_spec(bench, n_events));
 
-      // Reported so a short read shows up as a number rather than a plausible time.
-      std::uint64_t total_elements = 0;
-
       std::vector<std::string> const& products = reader.product_names();
+      std::vector<std::size_t> const& element_bytes = reader.product_element_bytes();
+      // Per product, so each can be weighed by its own element width later.
+      std::vector<std::uint64_t> elements(products.size(), 0);
+
       auto const start = std::chrono::steady_clock::now();
       for (std::uint64_t i = 0; i < n_events; ++i) {
         std::uint64_t const event_id = order->next();
-        for (std::string const& product : products)
-          total_elements += reader.read_product(event_id, product);
+        for (std::size_t p = 0; p < products.size(); ++p)
+          elements[p] += reader.read_product(event_id, products[p]);
       }
       auto const stop = std::chrono::steady_clock::now();
+
+      // Reported so a short read shows up as a number rather than a plausible time.
+      std::uint64_t total_elements = 0;
+      std::uint64_t wanted_bytes = 0;
+      for (std::size_t p = 0; p < products.size(); ++p) {
+        total_elements += elements[p];
+        wanted_bytes += elements[p] * element_bytes[p];
+      }
 
       m.wall_s = std::chrono::duration<double>(stop - start).count();
       m.latency_us_per_event = m.wall_s / static_cast<double>(n_events) * 1.0e6;
       m.throughput_evt_s = m.wall_s > 0.0 ? static_cast<double>(n_events) / m.wall_s : 0.0;
       m.total_elements = total_elements;
+      m.wanted_bytes = wanted_bytes;
 
       std::ostringstream raw;
       reader.print_metrics(raw);
@@ -212,9 +222,13 @@ namespace fgs::bench {
       reps.push_back(m);
     }
 
+    std::uint64_t dataset_pages = 0;
+    for (auto const& [name, facts] : dataset_facts)
+      dataset_pages += facts.pages;
+
     fgs::bench::write_raw_csv(bench_dir / "csv" / "raw.csv", id, reps);
-    fgs::bench::write_benchmark_summary_txt(bench_dir / "summary.txt", id, reps);
-    fgs::bench::append_summary_row(summary_csv, id, reps);
+    fgs::bench::write_benchmark_summary_txt(bench_dir / "summary.txt", id, reps, dataset_pages);
+    fgs::bench::append_summary_row(summary_csv, id, reps, dataset_pages);
   }
 
 }

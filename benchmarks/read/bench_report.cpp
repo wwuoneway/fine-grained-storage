@@ -115,7 +115,8 @@ namespace fgs::bench {
       double wall_mean = 0.0, wall_min = 0.0;
       double lat_mean = 0.0, lat_min = 0.0;
       double thr_mean = 0.0;
-      double read_ms_mean = 0.0, unzip_ms_mean = 0.0, payload_mib_mean = 0.0;
+      double wanted_mib_mean = 0.0;
+      double read_ms_mean = 0.0, unzip_ms_mean = 0.0, payload_mib_mean = 0.0, unzip_mib_mean = 0.0;
       double n_read_mean = 0.0, read_eff_mean = 0.0;
       double n_page_read_mean = 0.0, n_page_unsealed_mean = 0.0, n_cluster_loaded_mean = 0.0;
     };
@@ -123,15 +124,18 @@ namespace fgs::bench {
     Aggregates aggregate(std::vector<Measurement> const& reps)
     {
       std::vector<double> wall, latency;
-      double read_ms_sum = 0.0, unzip_ms_sum = 0.0, payload_sum = 0.0;
+      double wanted_sum = 0.0;
+      double read_ms_sum = 0.0, unzip_ms_sum = 0.0, payload_sum = 0.0, unzip_sum = 0.0;
       double n_read_sum = 0.0, read_eff_sum = 0.0;
       double n_page_read_sum = 0.0, n_page_unsealed_sum = 0.0, n_cluster_loaded_sum = 0.0;
       for (Measurement const& m : reps) {
         wall.push_back(m.wall_s);
         latency.push_back(m.latency_us_per_event);
+        wanted_sum += static_cast<double>(m.wanted_bytes) / (1024.0 * 1024.0);
         read_ms_sum += m.counters.read_wall_ms;
         unzip_ms_sum += m.counters.unzip_wall_ms;
         payload_sum += m.counters.read_payload_mib;
+        unzip_sum += m.counters.unzip_mib;
         n_read_sum += static_cast<double>(m.counters.n_read);
         read_eff_sum += m.counters.read_efficiency;
         n_page_read_sum += static_cast<double>(m.counters.n_page_read);
@@ -150,9 +154,11 @@ namespace fgs::bench {
               lat_mean,
               *std::min_element(latency.begin(), latency.end()),
               thr_mean,
+              wanted_sum / n,
               read_ms_sum / n,
               unzip_ms_sum / n,
               payload_sum / n,
+              unzip_sum / n,
               n_read_sum / n,
               read_eff_sum / n,
               n_page_read_sum / n,
@@ -160,12 +166,39 @@ namespace fgs::bench {
               n_cluster_loaded_sum / n};
     }
 
+    // The read-cost ratios, left NaN where the denominator is unknown so a CSV
+    // column never carries a fabricated zero.
+    struct Derived {
+      double decomp_amplification = std::numeric_limits<double>::quiet_NaN();
+      double unzip_gb_s = std::numeric_limits<double>::quiet_NaN();
+      // Only the unsealed count sees a page revisited: a page is fetched once,
+      // then unsealed again for every later entry that lands on it.
+      double page_read_amplification = std::numeric_limits<double>::quiet_NaN();
+      double page_unseal_amplification = std::numeric_limits<double>::quiet_NaN();
+    };
+
+    Derived derive(Aggregates const& a, std::uint64_t dataset_pages)
+    {
+      Derived d;
+      if (a.wanted_mib_mean > 0.0)
+        d.decomp_amplification = a.unzip_mib_mean / a.wanted_mib_mean;
+      if (a.unzip_ms_mean > 0.0)
+        d.unzip_gb_s = a.unzip_mib_mean * (1024.0 * 1024.0) / 1.0e6 / a.unzip_ms_mean;
+      if (dataset_pages > 0) {
+        auto const pages = static_cast<double>(dataset_pages);
+        d.page_read_amplification = a.n_page_read_mean / pages;
+        d.page_unseal_amplification = a.n_page_unsealed_mean / pages;
+      }
+      return d;
+    }
+
   }
 
   ReadCounters parse_read_counters(std::string const& raw_dump)
   {
     // Sum the raw volumes/times across every product section, then derive ratios.
-    double payload_b = 0.0, overhead_b = 0.0, wall_read_ns = 0.0, wall_unzip_ns = 0.0;
+    double payload_b = 0.0, overhead_b = 0.0, unzip_b = 0.0;
+    double wall_read_ns = 0.0, wall_unzip_ns = 0.0;
     std::uint64_t n_read = 0;
     std::uint64_t n_page_read = 0, n_page_unsealed = 0, n_cluster_loaded = 0;
 
@@ -198,6 +231,8 @@ namespace fgs::bench {
         payload_b += value;
       else if (name == "szReadOverhead")
         overhead_b += value;
+      else if (name == "szUnzip")
+        unzip_b += value;
       else if (name == "timeWallRead")
         wall_read_ns += value;
       else if (name == "timeWallUnzip")
@@ -216,6 +251,7 @@ namespace fgs::bench {
     c.read_wall_ms = wall_read_ns / 1e6;
     c.unzip_wall_ms = wall_unzip_ns / 1e6;
     c.read_payload_mib = payload_b / (1024.0 * 1024.0);
+    c.unzip_mib = unzip_b / (1024.0 * 1024.0);
     c.n_read = n_read;
     c.n_page_read = n_page_read;
     c.n_page_unsealed = n_page_unsealed;
@@ -307,7 +343,9 @@ namespace fgs::bench {
            "num_events,reps,wall_s_mean,wall_s_min,latency_us_mean,latency_us_min,"
            "throughput_evt_s_mean,"
            "read_wall_ms,unzip_wall_ms,read_payload_mib,n_read,read_efficiency,"
-           "n_page_read,n_page_unsealed,n_cluster_loaded\n";
+           "n_page_read,n_page_unsealed,n_cluster_loaded,"
+           "unzip_mib,wanted_mib,decomp_amplification,unzip_gb_s,"
+           "page_read_amplification,page_unseal_amplification\n";
   }
 
   void write_raw_csv(fs::path const& path,
@@ -322,7 +360,7 @@ namespace fgs::bench {
            "cluster_cache,implicit_mt,containers,"
            "num_events,repetition,wall_s,latency_us_per_event,throughput_evt_s,total_elements,"
            "read_wall_ms,unzip_wall_ms,read_payload_mib,n_read,read_efficiency,"
-           "n_page_read,n_page_unsealed,n_cluster_loaded\n";
+           "n_page_read,n_page_unsealed,n_cluster_loaded,unzip_mib,wanted_mib\n";
     for (Measurement const& m : reps)
       csv << id.num << ',' << csv_field(id.name) << ',' << csv_field(id.variant) << ','
           << csv_field(id.access_pattern) << ',' << id.scatter_distance << ','
@@ -335,14 +373,17 @@ namespace fgs::bench {
           << m.counters.read_payload_mib << ',' << m.counters.n_read << ','
           << m.counters.read_efficiency << ','
           << m.counters.n_page_read << ',' << m.counters.n_page_unsealed << ','
-          << m.counters.n_cluster_loaded << '\n';
+          << m.counters.n_cluster_loaded << ',' << m.counters.unzip_mib << ','
+          << static_cast<double>(m.wanted_bytes) / (1024.0 * 1024.0) << '\n';
   }
 
   void append_summary_row(std::ostream& csv,
                           BenchmarkId const& id,
-                          std::vector<Measurement> const& reps)
+                          std::vector<Measurement> const& reps,
+                          std::uint64_t dataset_pages)
   {
     Aggregates const a = aggregate(reps);
+    Derived const d = derive(a, dataset_pages);
     csv << id.num << ',' << csv_field(id.name) << ',' << csv_field(id.variant) << ','
         << csv_field(id.access_pattern) << ',' << id.scatter_distance << ','
         << csv_field(id.cache_state) << ','
@@ -353,7 +394,9 @@ namespace fgs::bench {
         << a.read_ms_mean << ',' << a.unzip_ms_mean << ',' << a.payload_mib_mean << ','
         << a.n_read_mean << ',' << a.read_eff_mean << ','
         << a.n_page_read_mean << ',' << a.n_page_unsealed_mean << ','
-        << a.n_cluster_loaded_mean << '\n';
+        << a.n_cluster_loaded_mean << ',' << a.unzip_mib_mean << ',' << a.wanted_mib_mean << ','
+        << d.decomp_amplification << ',' << d.unzip_gb_s << ',' << d.page_read_amplification
+        << ',' << d.page_unseal_amplification << '\n';
   }
 
   void write_benchmark_metadata(fs::path const& path, BenchmarkId const& id,
@@ -389,20 +432,42 @@ namespace fgs::bench {
 
   void write_benchmark_summary_txt(fs::path const& path,
                                    BenchmarkId const& id,
-                                   std::vector<Measurement> const& reps)
+                                   std::vector<Measurement> const& reps,
+                                   std::uint64_t dataset_pages)
   {
     std::ofstream out(path);
     if (!out)
       throw std::runtime_error("cannot write benchmark summary: " + path.string());
 
     Aggregates const a = aggregate(reps);
+    Derived const d = derive(a, dataset_pages);
+
+    auto const ratio = [](double v) {
+      std::ostringstream os;
+      if (std::isnan(v))
+        os << "n/a";
+      else
+        os << std::fixed << std::setprecision(2) << v << 'x';
+      return os.str();
+    };
+    std::ostringstream mib;
+    mib << std::fixed << std::setprecision(3) << a.unzip_mib_mean << " of " << a.wanted_mib_mean
+        << " MiB wanted";
+
     out << "benchmark " << id.num << " - " << id.name << '\n'
         << "variant: " << id.variant << " | cache: " << id.cache_state
         << " | cluster_cache: " << id.cluster_cache << " | events: " << id.num_events << '\n'
         << "reps                     : " << a.reps << '\n'
         << "wall_s   mean/min        : " << a.wall_mean << " / " << a.wall_min << '\n'
-        << "latency  mean/min (us/ev): " << a.lat_mean << " / " << a.lat_min << '\n'
-        << "throughput mean  (evt/s) : " << a.thr_mean << '\n';
+        << "time/event mean/min (us) : " << a.lat_mean << " / " << a.lat_min << '\n'
+        << "throughput mean  (evt/s) : " << a.thr_mean << '\n'
+        << "decomp amplification     : " << ratio(d.decomp_amplification) << "  (" << mib.str()
+        << ")\n"
+        << "decomp throughput (GB/s) : " << d.unzip_gb_s << '\n'
+        << "page read amplification  : " << ratio(d.page_read_amplification) << "  ("
+        << a.n_page_read_mean << " of " << dataset_pages << " pages fetched)\n"
+        << "page unseal amplification: " << ratio(d.page_unseal_amplification) << "  ("
+        << a.n_page_unsealed_mean << " of " << dataset_pages << " pages decompressed)\n";
   }
 
   std::string format_metrics_table(std::string const& raw_dump)

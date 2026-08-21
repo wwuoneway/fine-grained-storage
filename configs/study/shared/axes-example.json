@@ -1,0 +1,49 @@
+{
+  "_comment": "Annotated example of the axes file scripts/run_study_all.sh takes as its one argument. It is the whole study matrix: the datasets to generate, and the writing and reading axes crossed over each of them. Copy it, edit the values, and pass your copy. Loose files directly under configs/study/ are gitignored, so a machine-tuned matrix can live there; reproducible variants meant for others belong here in configs/study/shared/ (see study-1.json and study-2.json). This example is deliberately small so it finishes in minutes.",
+
+  "_comment_generation": "One entry per dataset. Each becomes a dataset id of the form s<num_events>_p<min>-<max>, so two entries may not agree on both fields. min == max gives fixed-size events; a range gives variable-size ones.",
+
+  "_comment_writing": "variants are the on-disk row orders written from the same generated data: 'no-shuffle' keeps generation order, 'shuffle' permutes it with shuffle_seed. max_page_size_mib is optional; each entry is one value of RNTuple's MaxUnzippedPageSize in MiB (2^20 bytes), swept as its own write-options combo (ids pg0p25mib, pg5mib, ...) with its own written files, so it multiplies the run count. Fractional values are allowed. An entry of 1 is ROOT's own default, so it maps to the 'default' combo and reuses the files written with no write options instead of duplicating them. Drop the key for that same effect with no sweep.",
+
+  "_comment_reading": "access_pattern is any of sequential, random, scatter; all three are full permutations of the event range, so every case reads the same events and only the order differs. scatter_distance is crossed with the scatter pattern only, so sequential and random get one case each rather than one per value; it may be a scalar or a list. It must stay below num_events, and below num_events/10 so the clamp at the array ends does not distort the order. scatter_seed and access_seed are scalars copied to every case. products names the data products to read, e.g. [\"momentum\"]; each product lives in its own container, so naming one reads one container instead of the whole event. It applies to every case rather than being crossed, so it does not multiply the run count; omit it to read everything. num_events is optional and defaults to reading each dataset whole, which is usually what you want when the datasets differ by orders of magnitude in length.",
+
+  "defaults": {
+    "generation": {
+      "seed": 42,
+      "position": {
+        "distribution": "uniform",
+        "x": { "min": -150.0, "max": 150.0 },
+        "y": { "min": -75.0, "max": 75.0 },
+        "z": { "min": -500.0, "max": 500.0 }
+      },
+      "momentum": {
+        "mean": 0.0,
+        "stddev": 1.0,
+        "min_magnitude": 0.05
+      }
+    }
+  },
+
+  "generation": [
+    { "num_events": 102400, "particles": { "min": 1024, "max": 1024 } },
+    { "num_events": 1600, "particles": { "min": 65536, "max": 65536 } }
+  ],
+
+  "writing": {
+    "variants": ["no-shuffle"],
+    "shuffle_seed": 7,
+    "max_page_size_mib": [1]
+  },
+
+  "reading": {
+    "access_pattern": ["sequential", "scatter"],
+    "scatter_distance": [1, 8, 64],
+    "scatter_seed": 56,
+    "access_seed": 1234,
+    "products": ["momentum"],
+    "cache": ["cold"],
+    "cluster_cache": ["off"],
+    "implicit_mt": ["off"],
+    "repetitions": 2
+  }
+}

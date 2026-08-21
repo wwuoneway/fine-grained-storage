@@ -1,0 +1,43 @@
+{
+  "defaults": {
+    "generation": {
+      "seed": 42,
+      "position": {
+        "distribution": "uniform",
+        "x": { "min": -150.0, "max": 150.0 },
+        "y": { "min": -75.0, "max": 75.0 },
+        "z": { "min": -500.0, "max": 500.0 }
+      },
+      "momentum": {
+        "mean": 0.0,
+        "stddev": 1.0,
+        "min_magnitude": 0.05
+      }
+    }
+  },
+  "generation": [
+    { "num_events": 1638400, "particles": { "min": 64, "max": 64 } },
+    { "num_events": 409600, "particles": { "min": 256, "max": 256 } },
+    { "num_events": 102400, "particles": { "min": 1024, "max": 1024 } },
+    { "num_events": 25600, "particles": { "min": 4096, "max": 4096 } },
+    { "num_events": 6400, "particles": { "min": 16384, "max": 16384 } },
+    { "num_events": 1600, "particles": { "min": 65536, "max": 65536 } },
+    { "num_events": 400, "particles": { "min": 262144, "max": 262144 } }
+  ],
+  "writing": {
+    "variants": ["no-shuffle"],
+    "shuffle_seed": 7,
+    "max_page_size_mib": [1]
+  },
+  "reading": {
+    "access_pattern": ["sequential", "scatter"],
+    "scatter_distance": [1, 2, 4, 8, 16, 32, 64, 128, 256],
+    "scatter_seed": 56,
+    "access_seed": 1234,
+    "products": ["momentum"],
+    "cache": ["cold"],
+    "cluster_cache": ["on"],
+    "implicit_mt": ["off"],
+    "repetitions": 1
+  }
+}

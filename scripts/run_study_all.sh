@@ -25,6 +25,11 @@ step() {
   printf '\n=== %s ===\n' "$*"
 }
 
+format_duration() {
+  local total=$1
+  printf '%d:%02d:%02d' $(( total / 3600 )) $(( total % 3600 / 60 )) $(( total % 60 ))
+}
+
 require_file() {
   [[ -f "$1" ]] || die "${2:-missing file}: $1"
 }
@@ -73,8 +78,9 @@ check_prerequisites() {
   GEN_EXE="$BUILD/generation/fgs_generate"
   WRITE_EXE="$BUILD/writing/fgs_strategy_one"
   READ_EXE="$BUILD/benchmarks/read/fgs_read_bench"
+  INSPECT_EXE="$BUILD/tools/fgs_inspect_columns"
   local exe
-  for exe in "$GEN_EXE" "$WRITE_EXE" "$READ_EXE"; do
+  for exe in "$GEN_EXE" "$WRITE_EXE" "$READ_EXE" "$INSPECT_EXE"; do
     require_executable "$exe" "missing executable -- build first"
   done
 
@@ -212,6 +218,9 @@ process_dataset() {
     write_root_files "$ds" "$wopts" "$write_cfg" "$write_dir" "$write_key"
 
     run_benchmark "$bench_cfg" "$run_dir"
+    # After the measurement, never before: reading the descriptor back would
+    # warm the page cache the benchmark just evicted.
+    run_in_env "$INSPECT_EXE" "$run_dir"
     run_dirs+=("$run_dir")
   done <<< "$COMBOS"
 
@@ -220,6 +229,7 @@ process_dataset() {
 }
 
 main() {
+  SECONDS=0
   REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
   cd "$REPO" || die "cannot enter repo root: $REPO"
 
@@ -253,7 +263,16 @@ main() {
     process_dataset "$ds" "$gen_cfg" "$gen_dir" "$dataset_dir"
   done
 
-  step "done: $sweep"
+  # Compares datasets, so it can only run once they have all landed.
+  info "--- plots across datasets ---"
+  "$PLOT_PY" scripts/event_size_curves.py "$sweep" \
+    || info "event size curves not written, see the message above"
+  "$PLOT_PY" scripts/scatter_curves.py "$sweep" \
+    || info "scatter-distance curves not written, see the message above"
+  "$PLOT_PY" scripts/growth_curves.py "$sweep" \
+    || info "growth curves not written, see the message above"
+
+  step "done: $sweep ($TOTAL benchmark(s), took $(format_duration "$SECONDS"))"
 }
 
 main "$@"

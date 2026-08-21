@@ -2,14 +2,23 @@
 from __future__ import annotations
 
 import csv
+import functools
 import json
 import math
 import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 # The sweep axes that appear as summary.csv columns.
 AXES = ["variant", "access_pattern", "cache_state", "cluster_cache", "implicit_mt"]
+
+# Everything except access_pattern: these pick the figure, not the curve, in the
+# cross-dataset comparison figures (event_size.py, scatter_curves.py).
+FIGURE_AXES = ["variant", "cache_state", "cluster_cache", "implicit_mt"]
+
+# How each axis reads in a file name. Bare on/off would say nothing.
+AXIS_SLUG = {"cluster_cache": "cc-{}", "implicit_mt": "imt-{}"}
 
 
 @dataclass(frozen=True)
@@ -19,6 +28,7 @@ class Metric:
     fmt: str      # format spec for cell annotations
     better: str   # "lower" or "higher"
     slug: str     # output filename stem
+    log: bool = False  # ratios spanning orders of magnitude need a log axis
 
     @property
     def name(self) -> str:
@@ -39,7 +49,23 @@ METRICS = {
     "unzip_wall_ms":    Metric("decompression time (s)", 1e-3, ".2f", "lower", "decompression"),
     "read_payload_mib": Metric("bytes read (MiB)", 1.0, ".1f", "lower", "read_payload"),
     "n_page_read":      Metric("pages read", 1.0, ".0f", "lower", "pages_read"),
+    # The amplifications are ratios of like units, so they carry no unit of their
+    # own; the axis says so rather than leaving a reader to guess at bytes.
+    "decomp_amplification":    Metric("decompressed / wanted bytes (x)", 1.0, ".2f", "lower",
+                                      "decomp_amplification", log=True),
+    "unzip_gb_s":              Metric("decompression throughput (GB/s)", 1.0, ".2f", "higher",
+                                      "decomp_throughput"),
+    "page_read_amplification": Metric("pages fetched / pages in file (x)", 1.0, ".2f", "lower",
+                                      "page_read_amplification", log=True),
+    "page_unseal_amplification": Metric("pages unzipped / pages in file (x)", 1.0, ".2f",
+                                        "lower", "page_unseal_amplification", log=True),
 }
+
+# The read-cost ratios, the default panels of the event-size figure. Pages
+# fetched and pages unzipped are both kept: one is I/O, the other is CPU,
+# and they move independently.
+RATIO_METRICS = ["decomp_amplification",
+                 "page_read_amplification", "page_unseal_amplification"]
 
 
 def read_summary(path: Path) -> list[dict]:
@@ -75,6 +101,62 @@ def run_payload_mib(run_dir: Path) -> float | None:
     (older run, or field absent)."""
     manifest = _first_manifest(run_dir)
     return manifest.get("avg_raw_payload_mib") if manifest else None
+
+
+def run_column_pages(run_dir: Path) -> int | None:
+    """Pages in the widest column of the files this run read (a particle
+    parameter, where all but a handful of a file's pages live), from the
+    columns.json fgs_inspect_columns writes. None if that pass has not run."""
+    path = run_dir / "columns.json"
+    if not path.exists():
+        return None
+    try:
+        by_file = json.loads(path.read_text())
+    except json.JSONDecodeError:
+        return None
+    pages = [n for containers in by_file.values()
+             for columns in containers.values() for n in columns.values()]
+    return max(pages) if pages else None
+
+
+def run_events_per_page(run_dir: Path) -> float | None:
+    """Events covered by one page of the widest column: the dataset's event
+    count over that column's page count. None if either is unavailable."""
+    manifest = _first_manifest(run_dir)
+    pages = run_column_pages(run_dir)
+    if manifest is None or not pages or "total_events" not in manifest:
+        return None
+    return manifest["total_events"] / pages
+
+
+def fmt_events_per_page(v: float) -> str:
+    """Ticks and labels: whole events once a page holds ten of them, two
+    decimals below that, where a page covers a fraction of an event."""
+    return f"{v:,.0f}" if v >= 10 else f"{v:.2f}"
+
+
+@functools.lru_cache(maxsize=None)
+def sweep_runs(sweep_root: Path) -> tuple[tuple[Path, float, float], ...]:
+    """(summary.csv, events_per_page, page_mib) per run under the sweep root.
+
+    A run with no manifest or no columns.json cannot be placed on the x axis.
+    Dropping it is reported, so a cleaned dataset cannot pass for a smaller study.
+    """
+    runs, skipped = [], []
+    for summary in sorted(sweep_root.glob("**/summary.csv")):
+        run_dir = summary.parent
+        events_per_page = run_events_per_page(run_dir)
+        if events_per_page is None:
+            skipped.append(run_dir)
+            continue
+        page = run_max_page_size(run_dir)
+        runs.append((summary, events_per_page, page["mib"] if page else 0.0))
+    if skipped:
+        print(f"sweep_runs: skipping {len(skipped)} run(s) with no readable manifest or no "
+              f"columns.json (run fgs_inspect_columns over them):", file=sys.stderr)
+        for run_dir in skipped:
+            print(f"  {run_dir}", file=sys.stderr)
+    return tuple(runs)
 
 
 def run_generation_summary(run_dir: Path) -> dict | None:

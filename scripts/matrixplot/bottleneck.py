@@ -9,7 +9,7 @@ import itertools
 import matplotlib.pyplot as plt
 import matplotlib.ticker
 
-from .data import distinct
+from .data import distinct, fmt_events_per_page
 from .grid import panel_grid
 
 SEG_NAMES = ["I/O", "Decompress", "Other"]
@@ -81,7 +81,7 @@ def _draw_panel(ax, sel, bar_axis, bar_vals, y_top):
 def plot_bottleneck_breakdown(rows, bar_axis, panel_axis, facet_axes, plots_dir, num_events,
                               payload_mib=None, cluster_page_summary=None,
                               generation_summary=None, max_page_size=None,
-                              container_summary=None):
+                              container_summary=None, events_per_page=None):
     """One figure: a stacked-bar breakdown per bar_axis value, panelled by panel_axis.
 
     The Y scale is shared across panels so they are directly comparable. Returns
@@ -89,9 +89,22 @@ def plot_bottleneck_breakdown(rows, bar_axis, panel_axis, facet_axes, plots_dir,
     """
     if not rows or "read_wall_ms" not in rows[0] or "unzip_wall_ms" not in rows[0]:
         return None
+
+    # The cluster cache gives every container its own prefetch thread, so the
+    # summed read time is thread time and need not fit inside the wall.
+    cached = [r for r in rows if r.get("cluster_cache") == "on"]
+    rows = [r for r in rows if r.get("cluster_cache") != "on"]
+    if cached:
+        print(f"bottleneck: dropping {len(cached)} benchmark(s) with cluster_cache=on, "
+              "whose read counters are thread time rather than a share of the wall")
+    if not rows:
+        print("bottleneck: skipping, every benchmark ran with cluster_cache=on")
+        return None
+
     no_counters = [r for r in rows
                    if float(r["read_wall_ms"]) == 0 and float(r["unzip_wall_ms"]) == 0]
     if len(no_counters) == len(rows):
+        print("bottleneck: skipping, no benchmark carries read counters")
         return None
     if no_counters:
         # Mixed provenance: bars would silently compare different measurement
@@ -131,10 +144,15 @@ def plot_bottleneck_breakdown(rows, bar_axis, panel_axis, facet_axes, plots_dir,
     if cluster_page_summary is not None:
         subtitle.append(f"{cluster_page_summary['clusters']} clusters, "
                         f"{cluster_page_summary['total_pages']} pages on disk")
+    if events_per_page is not None:
+        subtitle.append(f"{fmt_events_per_page(events_per_page)} events per page")
     if max_page_size is not None:
         subtitle.append(f"{max_page_size['mib']:g} MiB max page size")
     if container_summary is not None:
         subtitle.append(container_summary)
+    cc = {r.get("cluster_cache") for r in rows}
+    if len(cc) == 1 and (only := cc.pop()):
+        subtitle.append(f"cluster cache {only}")
 
     title = f"Wall-time bottleneck breakdown   [num_events={num_events}]"
     if subtitle:

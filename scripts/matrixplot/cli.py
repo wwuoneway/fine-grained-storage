@@ -17,6 +17,7 @@ from .data import (
     read_summary,
     container_summary,
     run_cluster_page_summary,
+    run_events_per_page,
     run_generation_summary,
     run_max_page_size,
     run_payload_mib,
@@ -92,11 +93,12 @@ def main() -> None:
     max_page_size = run_max_page_size(run_dir)
     png = plot_bottleneck_breakdown(rows, args.rows, args.cols, facet_axes, plots_dir, num_events,
                                     payload_mib, cluster_page_summary, generation_summary,
-                                    max_page_size, container_summary(rows))
+                                    max_page_size, container_summary(rows),
+                                    run_events_per_page(run_dir))
     if png:
         print(f"  {'bottleneck_breakdown':24} -> {png.relative_to(out_base)}")
     else:
-        print("  bottleneck_breakdown     -> skipped (counters absent or all-zero)")
+        print("  bottleneck_breakdown     -> skipped (see the reason above)")
 
     md_path = write_page_metrics_md(run_dir)
     if md_path:

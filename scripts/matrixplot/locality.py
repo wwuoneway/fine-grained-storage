@@ -95,7 +95,7 @@ def _plot_sweep(ax, series, xlabel, pattern, metric):
     for i, (page_mib, patterns) in enumerate(sorted(series.items())):
         # Wrap rather than truncate: more page sizes than colours must not
         # silently drop a curve.
-        points = sorted(patterns.get(pattern, {}).items())
+        points = [(x, v) for x, v in sorted(patterns.get(pattern, {}).items()) if metric in v]
         seen_x.update(x for x, _ in points)
         if not points:
             continue
@@ -124,7 +124,7 @@ def _plot_baseline(ax, series, pattern, metric, tick_label):
     ends = []
     for i, (page_mib, patterns) in enumerate(sorted(series.items())):
         vals = patterns.get(pattern, {}).get(0.0)
-        if not vals:
+        if not vals or metric not in vals:
             continue
         colour = palette[i % len(palette)]
         ax.plot([0], [vals[metric]], marker=MARKERS[i % len(MARKERS)], markersize=5,
@@ -213,11 +213,14 @@ def _one_metric(series, metric, out_path, conditions=""):
 
     # One explicit limit for the shared axis. Left to autoscale, the axis styled
     # last would set the top and clip whichever curve peaks somewhere else.
-    ymax = max(v[metric]
-               for patterns in series.values()
-               for points in patterns.values()
-               for v in points.values())
-    ax_seq.set_ylim(0, ymax * 1.05)
+    values = [v[metric]
+              for patterns in series.values()
+              for points in patterns.values()
+              for v in points.values() if metric in v]
+    if not values:
+        plt.close(fig)
+        return None
+    ax_seq.set_ylim(0, max(values) * 1.05)
 
     fig.suptitle(f"{spec.name.capitalize()} against access locality", y=0.98)
     if conditions:

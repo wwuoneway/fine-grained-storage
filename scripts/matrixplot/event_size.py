@@ -164,7 +164,7 @@ def _figure_name(key: tuple, every_key: list[tuple], metric_slug: str) -> str:
 
 def _panel(ax, curves, metric, cmap):
     """One metric against events/page. Returns [(x, y, pattern, colour)],
-    the leftmost point of each drawn line, for direct labeling."""
+    the rightmost point of each drawn line, for direct labeling."""
     patterns = sorted(curves, key=_pattern_order)
     distances = [int(p.split("-")[1]) for p in patterns if p.startswith("scatter-")]
     # Scatter distance is ordinal, so a sequential colormap lets the eye read
@@ -193,7 +193,7 @@ def _panel(ax, curves, metric, cmap):
             colour = cmap(norm(dist))
             ax.plot(xs, ys, color=colour, linewidth=1.3, marker="o", markersize=3.4,
                     markeredgecolor="white", markeredgewidth=0.4, zorder=3)
-        ends.append((xs[0], ys[0], _abbrev(pattern), colour))
+        ends.append((xs[-1], ys[-1], _abbrev(pattern), colour))
     if not ends:
         return None
 
@@ -252,9 +252,9 @@ def plot_event_size_curves(sweep_root: Path,
                 continue
             ax.set_xticks(ticks)
             ax.tick_params(labelbottom=True)
-            # Reserve log-space left of the data for line-end labels, so they
-            # sit inside the axes instead of colliding with the y tick numbers.
-            ax.set_xlim(ticks[0] / 3.2, ticks[-1] * 1.05)
+            # Reserve log-space right of the data for line-end labels, so they
+            # sit inside the axes instead of running off the figure.
+            ax.set_xlim(ticks[0] / 1.3, ticks[-1] * 3.2)
 
             # Title and conditions are laid out top-down in inches so their size
             # does not depend on the figure's height.
@@ -272,7 +272,7 @@ def plot_event_size_curves(sweep_root: Path,
 
             fig.subplots_adjust(left=0.14, right=0.95, top=1.0 - offset_in / height,
                                 bottom=1.6 / height)
-            label_lines(ax, ends, label_x=ticks[0] / 1.7)
+            label_lines(ax, ends, label_x=ticks[-1] * 1.7, ha="left")
             _fact_table(fig, ax, facts,
                         "events per page of a particle-parameter column (log scale)")
 
